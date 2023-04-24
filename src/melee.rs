@@ -156,7 +156,7 @@ impl MeleeClient {
 
             let gamemode = self.get_gamemode();
             if gamemode.is_some() {
-                let game_time = self.mem.read::<u32>(0x8046B6C8).and_then(|v| Some(u32::from_be(v)));
+                let game_time = self.mem.read::<u32>(0x8046B6C8).and_then(|v| Some(v));
                 let request = DiscordClientRequest::game(
                     self.get_stage(),
                     self.get_character(0),

@@ -1,3 +1,4 @@
+use std::any::TypeId;
 use std::ffi::c_void;
 use std::mem;
 use std::str::from_utf8_unchecked;
@@ -93,7 +94,7 @@ impl DolphinMemory {
         return true;
     }
 
-    pub fn read<T: std::default::Default>(&mut self, addr: u32) -> Option<T> {
+    pub fn read<T: Sized>(&mut self, addr: u32) -> Option<T> where [(); std::mem::size_of::<T>()]:{
         if !self.has_process() || (!self.has_gamecube_ram_offset() && !self.find_gamecube_ram_offset()) {
             return None;
         }
@@ -107,14 +108,16 @@ impl DolphinMemory {
         }
 
         let raddr = self.dolphin_base_addr.unwrap() as u32 + addr;
-        let mut output: T = Default::default();
+        let mut output = [0u8; mem::size_of::<T>()];
         let size = mem::size_of::<T>();
         let mut memread: usize = 0;
         
         unsafe {
             let success = ReadProcessMemory(self.process_handle.unwrap(), raddr as *const c_void, &mut output as *mut _ as *mut c_void, size, Some(&mut memread as *mut _));
             if success.as_bool() && memread == size {
-                return Some(output);
+                // because win32 decides to give me the output in the wrong endianness, we'll reverse it
+                output.reverse();
+                return Some(mem::transmute_copy(&output));
             } else {
                 let err = GetLastError().0;
                 println!("[MEMORY] Failed reading from address {:#08X} ERROR {}", addr, err);

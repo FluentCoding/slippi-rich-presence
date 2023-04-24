@@ -1,4 +1,5 @@
 // #![windows_subsystem = "windows"]
+#![feature(generic_const_exprs)]
 
 use discord::{DiscordClientRequest, DiscordClientRequestType};
 use tokio_util::sync::CancellationToken;
