@@ -1,14 +1,15 @@
-use num_enum::TryFromPrimitive;
 use strum_macros::Display;
 use tokio::sync::mpsc::Sender;
 use tokio_util::sync::CancellationToken;
 
-use crate::{discord::{DiscordClientRequest, DiscordClientRequestTimestamp, DiscordClientRequestTimestampMode}, util::{current_unix_time, sleep}};
+use crate::{discord::{DiscordClientRequest, DiscordClientRequestTimestamp, DiscordClientRequestTimestampMode}, util::{current_unix_time, sleep}, melee::{stage::MeleeStage, character::MeleeCharacter}};
 
-use self::dolphin_mem::DolphinMemory;
-use std::{thread, time::Duration};
+use self::{dolphin_mem::DolphinMemory, game::MeleeGameVariant};
 
 mod dolphin_mem;
+mod game;
+pub mod stage;
+pub mod character;
 
 pub struct MeleeClient {
     mem: DolphinMemory,
@@ -23,83 +24,24 @@ pub enum MeleeGameMode {
     SlippiOnline
 }
 
-#[derive(Display, TryFromPrimitive)]
-#[strum(serialize_all = "lowercase")]
-#[repr(u8)]
-pub enum MeleeCharacter {
-    DrMario = 0x16,
-	Mario = 0x08,
-	Luigi = 0x07,
-	Bowser = 0x05,
-	Peach = 0x0C,
-	Yoshi = 0x11,
-	DonkeyKong = 0x01,
-	CaptainFalcon = 0x00,
-	Ganondorf = 0x19,
-	Falco = 0x14,
-	Fox = 0x02,
-	Ness = 0x0B,
-	IceClimbers = 0x0E,
-	Kirby = 0x04,
-	Samus = 0x10,
-	Zelda = 0x12,
-    Sheik = 0x13,
-	Link = 0x06,
-	YoungLink = 0x15,
-	Pichu = 0x18,
-	Pikachu = 0x0D,
-	Jigglypuff = 0x0F,
-	Mewtwo = 0x0A,
-	MrGameAndWatch = 0x03,
-	Marth = 0x09,
-	Roy = 0x17
-}
-
-#[derive(Display, TryFromPrimitive)]
-#[strum(serialize_all = "lowercase")]
-#[repr(u8)]
-pub enum MeleeStage {
-    /*FountainOfDreams = 2,
-    PokemonStadium,
-    PrincessPeachsCastle,
-    KongoJungle,
-    Brinstar,
-    Corneria,
-    YoshisStory,
-    Onett,
-    MuteCity,
-    RainbowCruise,
-    JungleJapes,
-    GreatBay,
-    HyruleTemple,
-    BrinstarDepths,
-    YoshisIsland,
-    GreenGreens,
-    Fourside,
-    MushroomKingdomI,
-    MushroomKingdomII,
-    Venom = 22,
-    PokeFloats,
-    BigBlue,
-    IcicleMountain,
-    Icetop,
-    FlatZone,
-    DreamLandN64,
-    YoshisIslandN64,
-    KongoJungleN64,
-    Battlefield,
-    FinalDestination*/
-    Battlefield = 0x24,
-	YoshisStory = 0x0A,
-	FountainOfDreams = 0x0C,
-	Dreamland = 0x1C,
-	FinalDestination = 0x25,
-	PokemonStadium = 0x10
-}
-
 impl MeleeClient {
     pub fn new() -> Self {
         MeleeClient { mem: DolphinMemory::new(), last_payload: None }
+    }
+
+    fn get_game_variant(&mut self) -> Option<MeleeGameVariant> {
+        const GAME_ID_ADDR: u32 = 0x80000000;
+        const GAME_ID_LEN: usize = 0x06;
+
+        let game_id = self.mem.read_string::<GAME_ID_LEN>(GAME_ID_ADDR);
+        if game_id.is_none() {
+            return None;
+        }
+        return match game_id.unwrap().as_str() {
+            "GALE01" => Some(MeleeGameVariant::Vanilla),
+            "GTME01" => Some(MeleeGameVariant::UnclePunch),
+            _ => None
+        }
     }
 
     fn get_gamemode(&mut self) -> Option<MeleeGameMode> {
@@ -154,6 +96,8 @@ impl MeleeClient {
                 self.mem.check_process_running();
             }
 
+            
+            self.get_game_variant();
             let gamemode = self.get_gamemode();
             if gamemode.is_some() {
                 let game_time = self.mem.read::<u32>(0x8046B6C8).and_then(|v| Some(v));

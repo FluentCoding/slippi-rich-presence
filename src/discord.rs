@@ -1,7 +1,7 @@
 use convert_case::Casing;
 use discord_rich_presence::{activity::{self, Timestamps}, DiscordIpc, DiscordIpcClient};
 
-use crate::{rank, util::current_unix_time, melee::{MeleeStage, MeleeCharacter, MeleeGameMode}};
+use crate::{rank, util::current_unix_time, melee::{MeleeGameMode, stage::MeleeStage, character::MeleeCharacter}};
 use crate::util;
 
 #[derive(Debug, PartialEq, Clone)]

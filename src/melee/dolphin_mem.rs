@@ -1,4 +1,3 @@
-use std::any::TypeId;
 use std::ffi::c_void;
 use std::mem;
 use std::str::from_utf8_unchecked;
@@ -94,7 +93,7 @@ impl DolphinMemory {
         return true;
     }
 
-    pub fn read<T: Sized>(&mut self, addr: u32) -> Option<T> where [(); std::mem::size_of::<T>()]:{
+    pub fn read<T: Sized>(&mut self, addr: u32) -> Option<T> where [u8; mem::size_of::<T>()]:{
         if !self.has_process() || (!self.has_gamecube_ram_offset() && !self.find_gamecube_ram_offset()) {
             return None;
         }
@@ -116,7 +115,7 @@ impl DolphinMemory {
             let success = ReadProcessMemory(self.process_handle.unwrap(), raddr as *const c_void, &mut output as *mut _ as *mut c_void, size, Some(&mut memread as *mut _));
             if success.as_bool() && memread == size {
                 // because win32 decides to give me the output in the wrong endianness, we'll reverse it
-                output.reverse();
+                output.reverse(); // TODO figure out if we really have to do this, i would like to avoid it if possible
                 return Some(mem::transmute_copy(&output));
             } else {
                 let err = GetLastError().0;
@@ -128,6 +127,21 @@ impl DolphinMemory {
                 return None;
             }
         }
+    }
+
+    pub fn read_string<const LEN: usize>(&mut self, addr: u32) -> Option<String> where [(); mem::size_of::<[u8; LEN]>()]:{
+        let res = self.read::<[u8; LEN]>(addr);
+        if res.is_none() {
+            return None;
+        }
+
+        let mut raw = res.unwrap();
+        raw.reverse(); // we apparently have to reverse it again due to how the string is gathered
+
+        return match std::str::from_utf8(&raw) {
+            Ok(v) => Some(v.to_string()),
+            Err(e) => panic!("Invalid utf-8 string => {:?} | {}", res.unwrap(), e.to_string())
+        };
     }
 
     /*pub fn write(&self) {
