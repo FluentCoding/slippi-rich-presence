@@ -1,4 +1,5 @@
-use strum_macros::Display;
+use strum::{IntoEnumIterator};
+use strum_macros::{Display, EnumIter};
 use tokio::sync::mpsc::Sender;
 use tokio_util::sync::CancellationToken;
 
@@ -10,6 +11,15 @@ mod dolphin_mem;
 mod game;
 pub mod stage;
 pub mod character;
+
+// reference: https://github.com/akaneia/m-ex/blob/master/MexTK/include/match.h#L11-L14
+#[derive(PartialEq, EnumIter, Clone, Copy)]
+enum TimerMode {
+    Countup = 0x03,
+    Countdown = 0x02,
+    Hidden = 0x01,
+    Frozen = 0x00,
+}
 
 pub struct MeleeClient {
     mem: DolphinMemory,
@@ -27,6 +37,23 @@ pub enum MeleeGameMode {
 impl MeleeClient {
     pub fn new() -> Self {
         MeleeClient { mem: DolphinMemory::new(), last_payload: None }
+    }
+
+    fn timer_mode(&mut self) -> TimerMode {
+        const MATCH_INIT: u32 = 0x8046DB68; // first byte, reference: https://github.com/akaneia/m-ex/blob/master/MexTK/include/match.h#L136
+        let req = self.mem.read::<u8>(MATCH_INIT);
+        if req.is_none() {
+            return TimerMode::Countup;
+        }
+
+        let data = req.unwrap();
+        for timer_mode in TimerMode::iter() {
+            let val = timer_mode as u8;
+            if data & (val as u8) == (val as u8) {
+                return timer_mode;
+            }
+        }
+        return TimerMode::Countup; // should never reach but countup is the default
     }
 
     fn get_game_variant(&mut self) -> Option<MeleeGameVariant> {
@@ -61,9 +88,9 @@ impl MeleeClient {
     fn get_stage(&mut self) -> Option<MeleeStage> {
         const STAGE_ADDRESS: u32 = 0x8049E6C8 + 0x88 + 0x03;
 
-        let res = self.mem.read::<u8>(STAGE_ADDRESS);
-        if res.is_some() {
-            return MeleeStage::try_from(res.unwrap()).ok();
+        let req = self.mem.read::<u8>(STAGE_ADDRESS);
+        if req.is_some() {
+            return MeleeStage::try_from(req.unwrap()).ok();
         }
         return None;
     }
@@ -97,19 +124,19 @@ impl MeleeClient {
             }
 
             
-            self.get_game_variant();
+            // self.get_game_variant();
             let gamemode = self.get_gamemode();
             if gamemode.is_some() {
-                let game_time = self.mem.read::<u32>(0x8046B6C8).and_then(|v| Some(v));
+                let game_time = self.mem.read::<u32>(0x8046B6C8).and_then(|v| Some(v)).unwrap_or(0) as i64;
+                let timestamp = DiscordClientRequestTimestamp {
+                    mode: if self.timer_mode() == TimerMode::Countdown { DiscordClientRequestTimestampMode::End } else { DiscordClientRequestTimestampMode::Start },
+                    timestamp: if self.timer_mode() == TimerMode::Countdown { current_unix_time() + game_time } else { current_unix_time() - game_time }
+                };
                 let request = DiscordClientRequest::game(
                     self.get_stage(),
                     self.get_character(0),
                     gamemode.unwrap(),
-                    DiscordClientRequestTimestamp {
-                        mode: DiscordClientRequestTimestampMode::Start,
-                        // determine when the match started to have a more precise timestamp
-                        timestamp: current_unix_time() - (game_time.unwrap_or(0)) as i64
-                    }
+                    timestamp
                 );
                 
                 if self.last_payload.is_none() || self.last_payload.as_ref().unwrap() != &request {

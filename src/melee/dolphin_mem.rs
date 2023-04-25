@@ -53,7 +53,7 @@ impl DolphinMemory {
                 let name = from_utf8_unchecked(&pe32.szExeFile);
                 if VALID_PROCESS_NAMES.iter().any(|&e| name.starts_with(e)) {
                     println!("{}", name);
-                    let handle_res = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, false, pe32.th32ProcessID);
+                    let handle_res = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, pe32.th32ProcessID);
                     if handle_res.is_ok() {
                         let handle = handle_res.unwrap();
                         if GetExitCodeProcess(handle, &mut status as *mut _).as_bool() && status as i32 == STILL_ACTIVE.0 {
