@@ -33,6 +33,40 @@ pub enum MeleeCharacter {
 	Roy = 0x17
 }
 
+impl MeleeCharacter {
+	// useful when fetching from player card character address, however remains unused for now
+	pub fn from_css(css_index: u8) -> Option<Self> {
+		match css_index {
+			0 => Some(Self::DrMario),
+			1 => Some(Self::Mario),
+			2 => Some(Self::Luigi),
+			3 => Some(Self::Bowser),
+			4 => Some(Self::Peach),
+			5 => Some(Self::Yoshi),
+			6 => Some(Self::DonkeyKong),
+			7 => Some(Self::CaptainFalcon),
+			8 => Some(Self::Ganondorf),
+			9 => Some(Self::Falco),
+			10 => Some(Self::Fox),
+			11 => Some(Self::Ness),
+			12 => Some(Self::IceClimbers),
+			13 => Some(Self::Kirby),
+			14 => Some(Self::Samus),
+			15 => Some(Self::Zelda),
+			16 => Some(Self::Link),
+			17 => Some(Self::YoungLink),
+			18 => Some(Self::Pichu),
+			19 => Some(Self::Pikachu),
+			20 => Some(Self::Jigglypuff),
+			21 => Some(Self::Mewtwo),
+			22 => Some(Self::MrGameAndWatch),
+			23 => Some(Self::Marth),
+			24 => Some(Self::Roy),
+			_ => None
+		}
+	}
+}
+
 impl Display for MeleeCharacter {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match *self {

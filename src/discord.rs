@@ -13,6 +13,7 @@ pub enum DiscordClientRequestType {
 #[derive(Debug, PartialEq, Clone)]
 pub enum DiscordClientRequestTimestampMode {
     Start,
+    Static, // like Start, but we never update even if the timestamp changes. Used for non-ingame actions. 
     End
 }
 
@@ -27,7 +28,7 @@ impl PartialEq for DiscordClientRequestTimestamp {
     fn eq(&self, o: &Self) -> bool {
         // if the game was in pause for too long, resynchronize by saying that this payload is not the same as the other
         // to respect the rate limit, we choose a relatively high amount of seconds
-        self.timestamp.abs_diff(o.timestamp) < 15
+        self.mode == DiscordClientRequestTimestampMode::Static || self.timestamp.abs_diff(o.timestamp) < 15
     }
 }
 
@@ -43,7 +44,7 @@ pub struct DiscordClientRequest {
 
 impl Default for DiscordClientRequest {
     fn default() -> Self {
-        DiscordClientRequest { req_type: DiscordClientRequestType::Clear, scene: None, stage: "".to_string(), character: "".to_string(), mode: "".to_string(), timestamp: DiscordClientRequestTimestamp { mode: DiscordClientRequestTimestampMode::Start, timestamp: current_unix_time() } }
+        DiscordClientRequest { req_type: DiscordClientRequestType::Clear, scene: None, stage: "".to_string(), character: "".to_string(), mode: "".to_string(), timestamp: DiscordClientRequestTimestamp { mode: DiscordClientRequestTimestampMode::Static, timestamp: current_unix_time() } }
     }
 }
 
@@ -111,7 +112,7 @@ impl DiscordClient {
                         .large_image(stage.as_str())
                         .small_image(character.as_str())
                     )
-                .timestamps(if timestamp.mode == DiscordClientRequestTimestampMode::Start { Timestamps::new().start(timestamp.timestamp) } else { Timestamps::new().end(timestamp.timestamp) })
+                .timestamps(if (timestamp.mode as u8) < (DiscordClientRequestTimestampMode::End as u8) { Timestamps::new().start(timestamp.timestamp) } else { Timestamps::new().end(timestamp.timestamp) })
                 .details(mode.as_str())
                 .state("In Game")
         ).unwrap();

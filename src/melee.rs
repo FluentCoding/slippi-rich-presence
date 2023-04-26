@@ -78,6 +78,11 @@ impl MeleeClient {
     }
 
     fn get_player_port(&mut self) -> Option<u8> {self.mem.read::<u8>(R13!(0x5108)) }
+    fn get_character_selection(&mut self, player_id: u8) -> Option<MeleeCharacter> {
+        // 0x04 = character, 0x05 = skin (reference: https://github.com/bkacjios/m-overlay/blob/master/source/modules/games/GALE01-2.lua#L199-L202)
+        const PLAYER_SELECTION_BLOCKS: [u32; 4] = [0x8043208B, 0x80432093, 0x8043209B, 0x804320A3];
+        self.mem.read::<u8>(PLAYER_SELECTION_BLOCKS[player_id as usize] + 0x04).and_then(|v| MeleeCharacter::try_from(v).ok())
+    }
     fn timer_mode(&mut self) -> TimerMode {
         const MATCH_INIT: u32 = 0x8046DB68; // first byte, reference: https://github.com/akaneia/m-ex/blob/master/MexTK/include/match.h#L136
         self.mem.read::<u8>(MATCH_INIT).and_then(|v| {
@@ -87,7 +92,7 @@ impl MeleeClient {
                     return Some(timer_mode);
                 }
             }
-            return None;
+            None
         }).unwrap_or(TimerMode::Countup)
     }
     fn game_time(&mut self) -> i64 { self.mem.read::<u32>(0x8046B6C8).and_then(|v| Some(v)).unwrap_or(0) as i64 }
@@ -155,7 +160,15 @@ impl MeleeClient {
                 let gamemode = gamemode_opt.unwrap();
                 // Check if we are queueing a game
                 if gamemode == MeleeScene::SlippiCss {
-                    // println!("{:?}", self.get_player_port());
+                    /*self.get_player_port().and_then(|p| {
+                        let character = self.get_character_selection(p);
+                        let request = DiscordClientRequest::queue(
+                            self.slippi_online_scene(),
+                            character
+                        );
+                        send_discord_msg!(request.clone());
+                        None::<u8>
+                    });*/
                     /*self.matchmaking_type().and_then(|v| {
                         println!("{}", v);
                         None::<MatchmakingMode>
