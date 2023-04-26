@@ -52,7 +52,7 @@ async fn main() {
                 let msg = poll_res.unwrap();
                 println!("{:#?}", msg);
                 match msg.req_type {
-                    DiscordClientRequestType::Queue => discord_client.queue().await,
+                    DiscordClientRequestType::Queue => discord_client.queue(msg.scene, msg.character).await,
                     DiscordClientRequestType::Game => discord_client.game(msg.stage, msg.character, msg.mode, msg.timestamp),
                     DiscordClientRequestType::Clear => discord_client.clear()
                 }

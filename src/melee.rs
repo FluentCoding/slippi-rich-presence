@@ -1,3 +1,6 @@
+use std::fmt::Display;
+
+use num_enum::TryFromPrimitive;
 use strum::{IntoEnumIterator};
 use strum_macros::{Display, EnumIter};
 use tokio::sync::mpsc::Sender;
@@ -5,20 +8,42 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{discord::{DiscordClientRequest, DiscordClientRequestTimestamp, DiscordClientRequestTimestampMode}, util::{current_unix_time, sleep}, melee::{stage::MeleeStage, character::MeleeCharacter}};
 
-use self::{dolphin_mem::DolphinMemory, game::MeleeGameVariant};
+use self::{dolphin_mem::DolphinMemory};
 
 mod dolphin_mem;
-mod game;
 pub mod stage;
 pub mod character;
+
+macro_rules! R13 {($offset:expr) => { 0x804db6a0 - $offset }}
+const CSSDT_BUF_ADDR: u32 = 0x80005614; // reference: https://github.com/project-slippi/slippi-ssbm-asm/blob/0be644aff85986eae17e96f4c98b3342ab087d05/Online/Online.s#L31
 
 // reference: https://github.com/akaneia/m-ex/blob/master/MexTK/include/match.h#L11-L14
 #[derive(PartialEq, EnumIter, Clone, Copy)]
 enum TimerMode {
-    Countup = 0x03,
-    Countdown = 0x02,
-    Hidden = 0x01,
-    Frozen = 0x00,
+    Countup = 3,
+    Countdown = 2,
+    Hidden = 1,
+    Frozen = 0,
+}
+
+#[derive(TryFromPrimitive, Display)]
+#[repr(u8)]
+enum MatchmakingMode {
+    Idle = 0,
+    Initializing = 1,
+    Matchmaking = 2,
+    OpponentConnecting = 3,
+    ConnectionSuccess = 4,
+    ErrorEncountered = 5
+}
+
+#[derive(Debug, TryFromPrimitive, Display, PartialEq, Clone, Copy)]
+#[repr(u8)]
+pub enum SlippiMenuScene {
+    Ranked = 0,
+    Unranked = 1,
+    Direct = 2,
+    Teams = 3
 }
 
 pub struct MeleeClient {
@@ -26,12 +51,25 @@ pub struct MeleeClient {
     last_payload: Option<DiscordClientRequest>
 }
 
-#[derive(Display)]
-pub enum MeleeGameMode {
+#[derive(PartialEq)]
+pub enum MeleeScene {
     VsMode,
     UnclePunch,
     TrainingMode,
-    SlippiOnline
+    SlippiOnline,
+    SlippiCss
+}
+
+impl Display for MeleeScene {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            Self::VsMode => write!(f, "Vs. Mode"),
+            Self::UnclePunch => write!(f, "UnclePunch"),
+            Self::TrainingMode => write!(f, "Training Mode"),
+            Self::SlippiOnline => write!(f, "Slippi Online"),
+            Self::SlippiCss => write!(f, "Character Select Screen"),
+        }
+    }
 }
 
 impl MeleeClient {
@@ -39,24 +77,23 @@ impl MeleeClient {
         MeleeClient { mem: DolphinMemory::new(), last_payload: None }
     }
 
+    fn get_player_port(&mut self) -> Option<u8> {self.mem.read::<u8>(R13!(0x5108)) }
     fn timer_mode(&mut self) -> TimerMode {
         const MATCH_INIT: u32 = 0x8046DB68; // first byte, reference: https://github.com/akaneia/m-ex/blob/master/MexTK/include/match.h#L136
-        let req = self.mem.read::<u8>(MATCH_INIT);
-        if req.is_none() {
-            return TimerMode::Countup;
-        }
-
-        let data = req.unwrap();
-        for timer_mode in TimerMode::iter() {
-            let val = timer_mode as u8;
-            if data & (val as u8) == (val as u8) {
-                return timer_mode;
+        self.mem.read::<u8>(MATCH_INIT).and_then(|v| {
+            for timer_mode in TimerMode::iter() {
+                let val = timer_mode as u8;
+                if v & val == val {
+                    return Some(timer_mode);
+                }
             }
-        }
-        return TimerMode::Countup; // should never reach but countup is the default
+            return None;
+        }).unwrap_or(TimerMode::Countup)
     }
-
-    fn get_game_variant(&mut self) -> Option<MeleeGameVariant> {
+    fn game_time(&mut self) -> i64 { self.mem.read::<u32>(0x8046B6C8).and_then(|v| Some(v)).unwrap_or(0) as i64 }
+    fn matchmaking_type(&mut self) -> Option<MatchmakingMode> { self.mem.read::<u8>(CSSDT_BUF_ADDR).and_then(|v| MatchmakingMode::try_from(v).ok()) }
+    fn slippi_online_scene(&mut self) -> Option<SlippiMenuScene> { self.mem.read::<u8>(R13!(0x5060)).and_then(|v| SlippiMenuScene::try_from(v).ok()) }
+    /*fn game_variant(&mut self) -> Option<MeleeGameVariant> {
         const GAME_ID_ADDR: u32 = 0x80000000;
         const GAME_ID_LEN: usize = 0x06;
 
@@ -69,47 +106,36 @@ impl MeleeClient {
             "GTME01" => Some(MeleeGameVariant::UnclePunch),
             _ => None
         }
-    }
-
-    fn get_gamemode(&mut self) -> Option<MeleeGameMode> {
+    }*/
+    fn get_melee_scene(&mut self) -> Option<MeleeScene> {
         const MAJOR_SCENE: u32 = 0x80479D30;
         const MINOR_SCENE: u32 = MAJOR_SCENE + 0x03;
         let scene_tuple = (self.mem.read::<u8>(MAJOR_SCENE).unwrap_or(0), self.mem.read::<u8>(MINOR_SCENE).unwrap_or(0));
 
         match scene_tuple {
-            (2, 2) => Some(MeleeGameMode::VsMode),
-            (43, 1) => Some(MeleeGameMode::UnclePunch),
-            (28, 2) => Some(MeleeGameMode::TrainingMode),
-            (8, 2) => Some(MeleeGameMode::SlippiOnline),
+            (2, 2) => Some(MeleeScene::VsMode),
+            (43, 1) => Some(MeleeScene::UnclePunch),
+            (28, 2) => Some(MeleeScene::TrainingMode),
+            (8, 2) => Some(MeleeScene::SlippiOnline),
+            (8, 0) => Some(MeleeScene::SlippiCss),
             _ => None
         }
     }
-
     fn get_stage(&mut self) -> Option<MeleeStage> {
-        const STAGE_ADDRESS: u32 = 0x8049E6C8 + 0x88 + 0x03;
-
-        let req = self.mem.read::<u8>(STAGE_ADDRESS);
-        if req.is_some() {
-            return MeleeStage::try_from(req.unwrap()).ok();
-        }
-        return None;
+        self.mem.read::<u8>( 0x8049E6C8 + 0x88 + 0x03).and_then(|v| MeleeStage::try_from(v).ok())
     }
-
-    fn get_character(&mut self, player_id: usize) -> Option<MeleeCharacter> {
+    fn get_character(&mut self, player_id: u8) -> Option<MeleeCharacter> {
         const PLAYER_BLOCKS: [u32; 4] = [0x80453080, 0x80453F10, 0x80454DA0, 0x80455C30];
-        
-        let res = self.mem.read::<u8>(PLAYER_BLOCKS[player_id] + 0x07);
-        if res.is_some() {
-            return MeleeCharacter::try_from(res.unwrap()).ok();
-        }
-        return None;
+        self.mem.read::<u8>(PLAYER_BLOCKS[player_id as usize] + 0x07).and_then(|v| MeleeCharacter::try_from(v).ok())
     }
 
     pub fn run(&mut self, stop_signal: CancellationToken, discord_send: Sender<DiscordClientRequest>) {
         macro_rules! send_discord_msg {
             ($req:expr) => {
-                discord_send.blocking_send($req);
-                self.last_payload = Some($req);
+                if self.last_payload.is_none() || self.last_payload.as_ref().unwrap() != &$req {
+                    discord_send.blocking_send($req);
+                    self.last_payload = Some($req);
+                }
             };
         }
 
@@ -118,28 +144,39 @@ impl MeleeClient {
                 return;
             }
             if !self.mem.has_process() {
-                println!("{}", self.mem.find_process());
+                println!("{}", if self.mem.find_process() { "Found" } else { "Searching process..." });
             } else {
                 self.mem.check_process_running();
             }
 
-            
             // self.get_game_variant();
-            let gamemode = self.get_gamemode();
-            if gamemode.is_some() {
-                let game_time = self.mem.read::<u32>(0x8046B6C8).and_then(|v| Some(v)).unwrap_or(0) as i64;
-                let timestamp = DiscordClientRequestTimestamp {
-                    mode: if self.timer_mode() == TimerMode::Countdown { DiscordClientRequestTimestampMode::End } else { DiscordClientRequestTimestampMode::Start },
-                    timestamp: if self.timer_mode() == TimerMode::Countdown { current_unix_time() + game_time } else { current_unix_time() - game_time }
-                };
-                let request = DiscordClientRequest::game(
-                    self.get_stage(),
-                    self.get_character(0),
-                    gamemode.unwrap(),
-                    timestamp
-                );
-                
-                if self.last_payload.is_none() || self.last_payload.as_ref().unwrap() != &request {
+            let gamemode_opt = self.get_melee_scene();
+            if gamemode_opt.is_some() {
+                let gamemode = gamemode_opt.unwrap();
+                // Check if we are queueing a game
+                if gamemode == MeleeScene::SlippiCss {
+                    // println!("{:?}", self.get_player_port());
+                    /*self.matchmaking_type().and_then(|v| {
+                        println!("{}", v);
+                        None::<MatchmakingMode>
+                    });*/
+                } else {
+                    let game_time = self.game_time();
+                    let timestamp = DiscordClientRequestTimestamp {
+                        mode: if self.timer_mode() == TimerMode::Countdown { DiscordClientRequestTimestampMode::End } else { DiscordClientRequestTimestampMode::Start },
+                        timestamp: if self.timer_mode() == TimerMode::Countdown { current_unix_time() + game_time } else { current_unix_time() - game_time }
+                    };
+                    let player_index = match gamemode {
+                        MeleeScene::VsMode => self.get_player_port().unwrap_or(0u8),
+                        _ => 0u8 // default to port 1, mostly the case in single player modes like training mode/unclepunch
+                    };
+                    let request = DiscordClientRequest::game(
+                        self.get_stage(),
+                        self.get_character(player_index),
+                        gamemode,
+                        timestamp
+                    );
+                    
                     send_discord_msg!(request.clone());
                 }
             } else if self.last_payload.is_some() {

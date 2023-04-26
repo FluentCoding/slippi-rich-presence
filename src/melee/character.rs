@@ -1,8 +1,8 @@
-use num_enum::TryFromPrimitive;
-use strum_macros::Display;
+use std::fmt::Display;
 
-#[derive(Display, TryFromPrimitive)]
-#[strum(serialize_all = "lowercase")]
+use num_enum::TryFromPrimitive;
+
+#[derive(TryFromPrimitive)]
 #[repr(u8)]
 pub enum MeleeCharacter {
     DrMario = 0x16,
@@ -31,4 +31,37 @@ pub enum MeleeCharacter {
 	MrGameAndWatch = 0x03,
 	Marth = 0x09,
 	Roy = 0x17
+}
+
+impl Display for MeleeCharacter {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match *self {
+			Self::DrMario => write!(f, "Dr. Mario"),
+			Self::Mario => write!(f, "Mario"),
+			Self::Luigi => write!(f, "Luigi"),
+			Self::Bowser => write!(f, "Bowser"),
+			Self::Peach => write!(f, "Peach"),
+			Self::Yoshi => write!(f, "Yoshi"),
+			Self::DonkeyKong => write!(f, "Donkey Kong"),
+			Self::CaptainFalcon => write!(f, "Captain Falcon"),
+			Self::Ganondorf => write!(f, "Ganondorf"),
+			Self::Falco => write!(f, "Falco"),
+			Self::Fox => write!(f, "Fox"),
+			Self::Ness => write!(f, "Ness"),
+			Self::IceClimbers => write!(f, "Ice Climbers"),
+			Self::Kirby => write!(f, "Kirby"),
+			Self::Samus => write!(f, "Samus"),
+			Self::Zelda => write!(f, "Zelda"),
+			Self::Sheik => write!(f, "Sheik"),
+			Self::Link => write!(f, "Link"),
+			Self::YoungLink => write!(f, "Young Link"),
+			Self::Pichu => write!(f, "Pichu"),
+			Self::Pikachu => write!(f, "Pikachu"),
+			Self::Jigglypuff => write!(f, "Jigglypuff"),
+			Self::Mewtwo => write!(f, "Mewtwo"),
+			Self::MrGameAndWatch => write!(f, "Mr. Game & Watch"),
+			Self::Marth => write!(f, "Marth"),
+			Self::Roy => write!(f, "Roy"),
+		}
+	}
 }

@@ -1,7 +1,6 @@
-use convert_case::Casing;
 use discord_rich_presence::{activity::{self, Timestamps}, DiscordIpc, DiscordIpcClient};
 
-use crate::{rank, util::current_unix_time, melee::{MeleeGameMode, stage::MeleeStage, character::MeleeCharacter}};
+use crate::{rank, util::current_unix_time, melee::{stage::MeleeStage, character::MeleeCharacter, MeleeScene, SlippiMenuScene}};
 use crate::util;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -33,6 +32,7 @@ impl PartialEq for DiscordClientRequestTimestamp {
 #[derive(Debug, PartialEq, Clone)]
 pub struct DiscordClientRequest {
     pub req_type: DiscordClientRequestType,
+    pub scene: Option<SlippiMenuScene>,
     pub stage: String,
     pub character: String,
     pub mode: String,
@@ -41,22 +41,33 @@ pub struct DiscordClientRequest {
 
 impl Default for DiscordClientRequest {
     fn default() -> Self {
-        DiscordClientRequest { req_type: DiscordClientRequestType::Clear, stage: "".to_string(), character: "".to_string(), mode: "".to_string(), timestamp: DiscordClientRequestTimestamp { mode: DiscordClientRequestTimestampMode::Start, timestamp: current_unix_time() } }
+        DiscordClientRequest { req_type: DiscordClientRequestType::Clear, scene: None, stage: "".to_string(), character: "".to_string(), mode: "".to_string(), timestamp: DiscordClientRequestTimestamp { mode: DiscordClientRequestTimestampMode::Start, timestamp: current_unix_time() } }
     }
 }
 
 impl DiscordClientRequest {
     pub fn clear() -> Self { Default::default() }
-    pub fn queue() -> Self { DiscordClientRequest { req_type: DiscordClientRequestType::Queue, ..Default::default() } }
-    pub fn game(stage: Option<MeleeStage>, character: Option<MeleeCharacter>, mode: MeleeGameMode, timestamp: DiscordClientRequestTimestamp) -> Self {
-        DiscordClientRequest {
-            req_type: DiscordClientRequestType::Game,
-            stage: stage.and_then(|s| Some(s.to_string())).unwrap_or("questionmark".to_string()),
-            character: character.and_then(|c| Some(c.to_string())).unwrap_or("questionmark".to_string()),
-            mode: mode.to_string(),
-            timestamp
+    pub fn queue(scene: Option<SlippiMenuScene>, character: Option<MeleeCharacter>) -> Self {
+        Self {
+            req_type: DiscordClientRequestType::Queue,
+            scene,
+            character: Self::character_transformer(character),
+            ..Default::default()
         }
     }
+    pub fn game(stage: Option<MeleeStage>, character: Option<MeleeCharacter>, mode: MeleeScene, timestamp: DiscordClientRequestTimestamp) -> Self {
+        Self {
+            req_type: DiscordClientRequestType::Game,
+            stage: Self::stage_transformer(stage),
+            character: Self::character_transformer(character),
+            mode: mode.to_string(),
+            timestamp,
+            ..Default::default()
+        }
+    }
+    fn stage_transformer(stage: Option<MeleeStage>) -> String { Self::default_questionmark(stage.and_then(|s| Some(format!("stage{}", s as u8)))) }
+    fn character_transformer(character: Option<MeleeCharacter>) -> String { Self::default_questionmark(character.and_then(|c| Some(format!("char{}", c as u8)))) }
+    fn default_questionmark(opt: Option<String>) -> String { opt.unwrap_or("questionmark".to_string()) }
 }
 
 pub struct DiscordClient {
@@ -67,18 +78,25 @@ impl DiscordClient {
     pub fn clear(&mut self) {
         self.client.clear_activity().unwrap();
     }
-    pub async fn queue(&mut self) {
-        let rank_info = rank::get_rank_info("flcd-507").await.unwrap(); // TODO replace later
+    pub async fn queue(&mut self, scene: Option<SlippiMenuScene>, character: String) {
+        let mut large_image = "".to_string();
+        let mut large_text = "".to_string();
+        if scene.unwrap_or(SlippiMenuScene::Direct) == SlippiMenuScene::Ranked {
+            let rank_info = rank::get_rank_info("flcd-507").await.unwrap();
+            large_image = rank_info.name.clone(); // TODO replace code later
+            large_text = format!("{} | {} ELO", rank_info.name, util::round(rank_info.elo, 2));
+        }
 
         self.client.set_activity(
             activity::Activity::new()
                 .assets(
                     activity::Assets::new()
-                        .large_image(&rank_info.name)
-                        .large_text(format!("{} | {} ELO", rank_info.name, util::round(rank_info.elo, 2)).as_str())
+                        .large_image(large_image.as_str())
+                        .large_text(large_text.as_str())
+                        .small_image(character.as_str())
                     )
                 .timestamps(self.current_timestamp())
-                .details("Ranked")
+                .details(scene.and_then(|v| Some(v.to_string())).or(Some("".to_string())).unwrap().as_str())
                 .state("In Queue")
         ).unwrap();
         
@@ -91,8 +109,8 @@ impl DiscordClient {
                         .large_image(stage.as_str())
                         .small_image(character.as_str())
                     )
-                .timestamps(if timestamp.mode == DiscordClientRequestTimestampMode::Start {Timestamps::new().start(timestamp.timestamp)} else {Timestamps::new().end(timestamp.timestamp)})
-                .details(mode.as_str().to_case(convert_case::Case::Title).as_str())
+                .timestamps(if timestamp.mode == DiscordClientRequestTimestampMode::Start { Timestamps::new().start(timestamp.timestamp) } else { Timestamps::new().end(timestamp.timestamp) })
+                .details(mode.as_str())
                 .state("In Game")
         ).unwrap();
     }
