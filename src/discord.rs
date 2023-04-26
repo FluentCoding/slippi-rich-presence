@@ -24,8 +24,10 @@ pub struct DiscordClientRequestTimestamp {
 
 // we ignore this field
 impl PartialEq for DiscordClientRequestTimestamp {
-    fn eq(&self, _: &Self) -> bool {
-        true
+    fn eq(&self, o: &Self) -> bool {
+        // if the game was in pause for too long, resynchronize by saying that this payload is not the same as the other
+        // to respect the rate limit, we choose a relatively high amount of seconds
+        self.timestamp.abs_diff(o.timestamp) < 15
     }
 }
 
