@@ -1,4 +1,4 @@
-use discord_rich_presence::{activity::{self, Timestamps}, DiscordIpc, DiscordIpcClient};
+use discord_rich_presence::{activity::{self, Timestamps, Button}, DiscordIpc, DiscordIpcClient};
 
 use crate::{rank, util::current_unix_time, melee::{stage::{MeleeStage, OptionalMeleeStage}, character::{MeleeCharacter, OptionalMeleeCharacter}, MeleeScene, SlippiMenuScene}};
 use crate::util;
@@ -82,8 +82,8 @@ impl DiscordClient {
         let mut large_image = "".to_string();
         let mut large_text = "".to_string();
         if scene.unwrap_or(SlippiMenuScene::Direct) == SlippiMenuScene::Ranked {
-            let rank_info = rank::get_rank_info("flcd-507").await.unwrap();
-            large_image = rank_info.name.clone(); // TODO replace code later
+            let rank_info = rank::get_rank_info("flcd-507").await.unwrap(); // TODO replace code later
+            large_image = rank_info.name.to_lowercase().replace(" ", "_");
             large_text = format!("{} | {} ELO", rank_info.name, util::round(rank_info.elo, 2));
         }
 
@@ -95,7 +95,8 @@ impl DiscordClient {
                         .large_text(large_text.as_str())
                         .small_image(character.as_discord_resource().as_str())
                         .small_text(character.to_string().as_str())
-                    )
+                )
+                .buttons(vec![Button::new("View Ranked Profile", format!("https://slippi.gg/user/{}", "flcd-507").as_str())])
                 .timestamps(self.current_timestamp())
                 .details(scene.and_then(|v| Some(v.to_string())).or(Some("".to_string())).unwrap().as_str())
                 .state("In Queue")
@@ -111,7 +112,7 @@ impl DiscordClient {
                         .large_text(stage.to_string().as_str())
                         .small_image(character.as_discord_resource().as_str())
                         .small_text(character.to_string().as_str())
-                    )
+                )
                 .timestamps(if (timestamp.mode as u8) < (DiscordClientRequestTimestampMode::End as u8) { Timestamps::new().start(timestamp.timestamp) } else { Timestamps::new().end(timestamp.timestamp) })
                 .details(mode.as_str())
                 .state("In Game")

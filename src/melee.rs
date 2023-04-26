@@ -64,7 +64,7 @@ impl Display for MeleeScene {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match *self {
             Self::VsMode => write!(f, "Vs. Mode"),
-            Self::UnclePunch => write!(f, "UnclePunch"),
+            Self::UnclePunch => write!(f, "UnclePunch Training Mode"),
             Self::TrainingMode => write!(f, "Training Mode"),
             Self::SlippiOnline => write!(f, "Slippi Online"),
             Self::SlippiCss => write!(f, "Character Select Screen"),
