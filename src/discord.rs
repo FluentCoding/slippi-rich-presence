@@ -1,6 +1,6 @@
 use discord_rich_presence::{activity::{self, Timestamps}, DiscordIpc, DiscordIpcClient};
 
-use crate::{rank, util::current_unix_time, melee::{stage::MeleeStage, character::MeleeCharacter, MeleeScene, SlippiMenuScene}};
+use crate::{rank, util::current_unix_time, melee::{stage::{MeleeStage, OptionalMeleeStage}, character::{MeleeCharacter, OptionalMeleeCharacter}, MeleeScene, SlippiMenuScene}};
 use crate::util;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -36,15 +36,15 @@ impl PartialEq for DiscordClientRequestTimestamp {
 pub struct DiscordClientRequest {
     pub req_type: DiscordClientRequestType,
     pub scene: Option<SlippiMenuScene>,
-    pub stage: String,
-    pub character: String,
+    pub stage: OptionalMeleeStage,
+    pub character: OptionalMeleeCharacter,
     pub mode: String,
     pub timestamp: DiscordClientRequestTimestamp
 }
 
 impl Default for DiscordClientRequest {
     fn default() -> Self {
-        DiscordClientRequest { req_type: DiscordClientRequestType::Clear, scene: None, stage: "".to_string(), character: "".to_string(), mode: "".to_string(), timestamp: DiscordClientRequestTimestamp { mode: DiscordClientRequestTimestampMode::Static, timestamp: current_unix_time() } }
+        DiscordClientRequest { req_type: DiscordClientRequestType::Clear, scene: None, stage: OptionalMeleeStage(None), character: OptionalMeleeCharacter(None), mode: "".to_string(), timestamp: DiscordClientRequestTimestamp { mode: DiscordClientRequestTimestampMode::Static, timestamp: current_unix_time() } }
     }
 }
 
@@ -54,23 +54,20 @@ impl DiscordClientRequest {
         Self {
             req_type: DiscordClientRequestType::Queue,
             scene,
-            character: Self::character_transformer(character),
+            character: OptionalMeleeCharacter(character),
             ..Default::default()
         }
     }
     pub fn game(stage: Option<MeleeStage>, character: Option<MeleeCharacter>, mode: MeleeScene, timestamp: DiscordClientRequestTimestamp) -> Self {
         Self {
             req_type: DiscordClientRequestType::Game,
-            stage: Self::stage_transformer(stage),
-            character: Self::character_transformer(character),
+            stage: OptionalMeleeStage(stage),
+            character: OptionalMeleeCharacter(character),
             mode: mode.to_string(),
             timestamp,
             ..Default::default()
         }
     }
-    fn stage_transformer(stage: Option<MeleeStage>) -> String { Self::default_questionmark(stage.and_then(|s| Some(format!("stage{}", s as u8)))) }
-    fn character_transformer(character: Option<MeleeCharacter>) -> String { Self::default_questionmark(character.and_then(|c| Some(format!("char{}", c as u8)))) }
-    fn default_questionmark(opt: Option<String>) -> String { opt.unwrap_or("questionmark".to_string()) }
 }
 
 pub struct DiscordClient {
@@ -81,7 +78,7 @@ impl DiscordClient {
     pub fn clear(&mut self) {
         self.client.clear_activity().unwrap();
     }
-    pub async fn queue(&mut self, scene: Option<SlippiMenuScene>, character: String) {
+    pub async fn queue(&mut self, scene: Option<SlippiMenuScene>, character: OptionalMeleeCharacter) {
         let mut large_image = "".to_string();
         let mut large_text = "".to_string();
         if scene.unwrap_or(SlippiMenuScene::Direct) == SlippiMenuScene::Ranked {
@@ -96,7 +93,8 @@ impl DiscordClient {
                     activity::Assets::new()
                         .large_image(large_image.as_str())
                         .large_text(large_text.as_str())
-                        .small_image(character.as_str())
+                        .small_image(character.as_discord_resource().as_str())
+                        .small_text(character.to_string().as_str())
                     )
                 .timestamps(self.current_timestamp())
                 .details(scene.and_then(|v| Some(v.to_string())).or(Some("".to_string())).unwrap().as_str())
@@ -104,13 +102,15 @@ impl DiscordClient {
         ).unwrap();
         
     }
-    pub fn game(&mut self, stage: String, character: String, mode: String, timestamp: DiscordClientRequestTimestamp) {
+    pub fn game(&mut self, stage: OptionalMeleeStage, character: OptionalMeleeCharacter, mode: String, timestamp: DiscordClientRequestTimestamp) {
         self.client.set_activity(
             activity::Activity::new()
                 .assets(
                     activity::Assets::new()
-                        .large_image(stage.as_str())
-                        .small_image(character.as_str())
+                        .large_image(stage.as_discord_resource().as_str())
+                        .large_text(stage.to_string().as_str())
+                        .small_image(character.as_discord_resource().as_str())
+                        .small_text(character.to_string().as_str())
                     )
                 .timestamps(if (timestamp.mode as u8) < (DiscordClientRequestTimestampMode::End as u8) { Timestamps::new().start(timestamp.timestamp) } else { Timestamps::new().end(timestamp.timestamp) })
                 .details(mode.as_str())

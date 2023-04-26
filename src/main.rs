@@ -53,7 +53,7 @@ async fn main() {
             let poll_res = rx.try_recv();
             if poll_res.is_ok() {
                 let msg = poll_res.unwrap();
-                println!("{:#?}", msg);
+                println!("{:?}", msg);
                 match msg.req_type {
                     DiscordClientRequestType::Queue => discord_client.queue(msg.scene, msg.character).await,
                     DiscordClientRequestType::Game => discord_client.game(msg.stage, msg.character, msg.mode, msg.timestamp),

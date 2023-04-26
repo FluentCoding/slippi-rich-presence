@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use num_enum::TryFromPrimitive;
 
-#[derive(TryFromPrimitive)]
+#[derive(Debug, Clone, Copy, PartialEq, TryFromPrimitive)]
 #[repr(u8)]
 pub enum MeleeCharacter {
     DrMario = 0x16,
@@ -96,6 +96,22 @@ impl Display for MeleeCharacter {
 			Self::MrGameAndWatch => write!(f, "Mr. Game & Watch"),
 			Self::Marth => write!(f, "Marth"),
 			Self::Roy => write!(f, "Roy"),
+		}
+	}
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct OptionalMeleeCharacter(pub Option<MeleeCharacter>);
+impl OptionalMeleeCharacter {
+	pub fn as_discord_resource(&self) -> String {
+		self.0.as_ref().and_then(|c| Some(format!("char{}", (*c) as u8))).unwrap_or("questionmark".to_string())
+	}
+}
+impl Display for OptionalMeleeCharacter {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match &(*self).0 {
+			Some(v) => write!(f, "{}", v),
+			_ => write!(f, "Unknown")
 		}
 	}
 }

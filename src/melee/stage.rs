@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use num_enum::TryFromPrimitive;
 
-#[derive(TryFromPrimitive)]
+#[derive(Debug, PartialEq, Copy, Clone, TryFromPrimitive)]
 #[repr(u8)]
 pub enum MeleeStage {
     // Dummy, (unused)
@@ -83,4 +83,20 @@ impl Display for MeleeStage {
             Self::FD => write!(f, "Final Destination"),
         }
     }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct OptionalMeleeStage(pub Option<MeleeStage>);
+impl OptionalMeleeStage {
+	pub fn as_discord_resource(&self) -> String {
+		self.0.as_ref().and_then(|c| Some(format!("stage{}", (*c) as u8))).unwrap_or("questionmark".to_string())
+	}
+}
+impl Display for OptionalMeleeStage {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match &(*self).0 {
+			Some(v) => write!(f, "{}", v),
+			_ => write!(f, "Unknown")
+		}
+	}
 }
