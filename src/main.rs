@@ -2,6 +2,7 @@
 #![feature(generic_const_exprs)]
 
 use discord::{DiscordClientRequest, DiscordClientRequestType};
+use single_instance::SingleInstance;
 use tokio_util::sync::CancellationToken;
 use tokio::sync::mpsc;
 use util::sleep;
@@ -14,6 +15,8 @@ mod melee;
 
 #[tokio::main]
 async fn main() {
+    let instance = SingleInstance::new("SLIPPI_DISCORD_RICH_PRESENCE_MTX").unwrap();
+    assert!(instance.is_single());
     let (tx, mut rx) = mpsc::channel::<DiscordClientRequest>(32);
 
     let cancel_token = CancellationToken::new();
