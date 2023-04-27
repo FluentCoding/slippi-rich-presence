@@ -6,7 +6,7 @@ use strum_macros::{Display, EnumIter};
 use tokio::sync::mpsc::Sender;
 use tokio_util::sync::CancellationToken;
 
-use crate::{discord::{DiscordClientRequest, DiscordClientRequestTimestamp, DiscordClientRequestTimestampMode}, util::{current_unix_time, sleep}, melee::{stage::MeleeStage, character::MeleeCharacter}};
+use crate::{discord::{DiscordClientRequest, DiscordClientRequestType, DiscordClientRequestTimestamp, DiscordClientRequestTimestampMode}, util::{current_unix_time, sleep}, melee::{stage::MeleeStage, character::MeleeCharacter}, config::CONFIG};
 
 use self::{dolphin_mem::DolphinMemory};
 
@@ -15,7 +15,7 @@ pub mod stage;
 pub mod character;
 
 macro_rules! R13 {($offset:expr) => { 0x804db6a0 - $offset }}
-const CSSDT_BUF_ADDR: u32 = 0x80005614; // reference: https://github.com/project-slippi/slippi-ssbm-asm/blob/0be644aff85986eae17e96f4c98b3342ab087d05/Online/Online.s#L31
+const _CSSDT_BUF_ADDR: u32 = 0x80005614; // reference: https://github.com/project-slippi/slippi-ssbm-asm/blob/0be644aff85986eae17e96f4c98b3342ab087d05/Online/Online.s#L31
 
 // reference: https://github.com/akaneia/m-ex/blob/master/MexTK/include/match.h#L11-L14
 #[derive(PartialEq, EnumIter, Clone, Copy)]
@@ -48,7 +48,7 @@ pub enum SlippiMenuScene {
 
 pub struct MeleeClient {
     mem: DolphinMemory,
-    last_payload: Option<DiscordClientRequest>
+    last_payload: DiscordClientRequest
 }
 
 #[derive(PartialEq)]
@@ -74,11 +74,11 @@ impl Display for MeleeScene {
 
 impl MeleeClient {
     pub fn new() -> Self {
-        MeleeClient { mem: DolphinMemory::new(), last_payload: None }
+        MeleeClient { mem: DolphinMemory::new(), last_payload: DiscordClientRequest::clear() }
     }
 
     fn get_player_port(&mut self) -> Option<u8> {self.mem.read::<u8>(R13!(0x5108)) }
-    fn get_character_selection(&mut self, player_id: u8) -> Option<MeleeCharacter> {
+    fn _get_character_selection(&mut self, player_id: u8) -> Option<MeleeCharacter> {
         // 0x04 = character, 0x05 = skin (reference: https://github.com/bkacjios/m-overlay/blob/master/source/modules/games/GALE01-2.lua#L199-L202)
         const PLAYER_SELECTION_BLOCKS: [u32; 4] = [0x8043208B, 0x80432093, 0x8043209B, 0x804320A3];
         self.mem.read::<u8>(PLAYER_SELECTION_BLOCKS[player_id as usize] + 0x04).and_then(|v| MeleeCharacter::try_from(v).ok())
@@ -96,7 +96,7 @@ impl MeleeClient {
         }).unwrap_or(TimerMode::Countup)
     }
     fn game_time(&mut self) -> i64 { self.mem.read::<u32>(0x8046B6C8).and_then(|v| Some(v)).unwrap_or(0) as i64 }
-    fn matchmaking_type(&mut self) -> Option<MatchmakingMode> { self.mem.read::<u8>(CSSDT_BUF_ADDR).and_then(|v| MatchmakingMode::try_from(v).ok()) }
+    fn _matchmaking_type(&mut self) -> Option<MatchmakingMode> { self.mem.read::<u8>(_CSSDT_BUF_ADDR).and_then(|v| MatchmakingMode::try_from(v).ok()) }
     fn slippi_online_scene(&mut self) -> Option<SlippiMenuScene> { self.mem.read::<u8>(R13!(0x5060)).and_then(|v| SlippiMenuScene::try_from(v).ok()) }
     /*fn game_variant(&mut self) -> Option<MeleeGameVariant> {
         const GAME_ID_ADDR: u32 = 0x80000000;
@@ -137,9 +137,9 @@ impl MeleeClient {
     pub fn run(&mut self, stop_signal: CancellationToken, discord_send: Sender<DiscordClientRequest>) {
         macro_rules! send_discord_msg {
             ($req:expr) => {
-                if self.last_payload.is_none() || self.last_payload.as_ref().unwrap() != &$req {
-                    discord_send.blocking_send($req);
-                    self.last_payload = Some($req);
+                if self.last_payload != $req {
+                    let _ = discord_send.blocking_send($req);
+                    self.last_payload = $req;
                 }
             };
         }
@@ -154,48 +154,67 @@ impl MeleeClient {
                 self.mem.check_process_running();
             }
 
-            // self.get_game_variant();
-            let gamemode_opt = self.get_melee_scene();
-            if gamemode_opt.is_some() {
-                let gamemode = gamemode_opt.unwrap();
-                // Check if we are queueing a game
-                if gamemode == MeleeScene::SlippiCss {
-                    /*self.get_player_port().and_then(|p| {
-                        let character = self.get_character_selection(p);
-                        let request = DiscordClientRequest::queue(
-                            self.slippi_online_scene(),
-                            character
+            CONFIG.with_ref(|c| {
+                // self.get_game_variant();
+                let gamemode_opt = self.get_melee_scene();
+                // println!(c)
+                if gamemode_opt.is_some() {
+                    let gamemode = gamemode_opt.unwrap();
+
+                    // Check if we are queueing a game
+                    if gamemode == MeleeScene::SlippiCss && c.slippi.show_queueing {
+                        /*self.get_player_port().and_then(|p| {
+                            let character = self.get_character_selection(p);
+                            let request = DiscordClientRequest::queue(
+                                self.slippi_online_scene(),
+                                character
+                            );
+                            send_discord_msg!(request.clone());
+                            None::<u8>
+                        });*/
+                        /*self.matchmaking_type().and_then(|v| {
+                            println!("{}", v);
+                            None::<MatchmakingMode>
+                        });*/
+                    // Else, we want to see if the current game mode is enabled in the config
+                    } else if gamemode != MeleeScene::SlippiCss && match gamemode {
+                        MeleeScene::SlippiOnline => {
+                            self.slippi_online_scene().and_then(|s| Some(match s {
+                                SlippiMenuScene::Ranked => c.slippi.ranked.enabled,
+                                SlippiMenuScene::Unranked => c.slippi.unranked.enabled,
+                                SlippiMenuScene::Direct => c.slippi.direct.enabled,
+                                SlippiMenuScene::Teams => c.slippi.teams.enabled,
+                            })).unwrap_or(true)
+                        },
+                        MeleeScene::UnclePunch => c.uncle_punch.enabled,
+                        MeleeScene::TrainingMode => c.training_mode.enabled,
+                        MeleeScene::VsMode => c.vs_mode.enabled,
+                        _ => true
+                    } {
+                        let game_time = self.game_time();
+                        let timestamp = DiscordClientRequestTimestamp {
+                            mode: if self.timer_mode() == TimerMode::Countdown { DiscordClientRequestTimestampMode::End } else { DiscordClientRequestTimestampMode::Start },
+                            timestamp: if self.timer_mode() == TimerMode::Countdown { current_unix_time() + game_time } else { current_unix_time() - game_time }
+                        };
+                        let player_index = match gamemode {
+                            MeleeScene::VsMode => self.get_player_port().unwrap_or(0u8),
+                            _ => 0u8 // default to port 1, mostly the case in single player modes like training mode/unclepunch
+                        };
+                        let request = DiscordClientRequest::game(
+                            self.get_stage(),
+                            self.get_character(player_index),
+                            gamemode,
+                            timestamp
                         );
+                        
                         send_discord_msg!(request.clone());
-                        None::<u8>
-                    });*/
-                    /*self.matchmaking_type().and_then(|v| {
-                        println!("{}", v);
-                        None::<MatchmakingMode>
-                    });*/
-                } else {
-                    let game_time = self.game_time();
-                    let timestamp = DiscordClientRequestTimestamp {
-                        mode: if self.timer_mode() == TimerMode::Countdown { DiscordClientRequestTimestampMode::End } else { DiscordClientRequestTimestampMode::Start },
-                        timestamp: if self.timer_mode() == TimerMode::Countdown { current_unix_time() + game_time } else { current_unix_time() - game_time }
-                    };
-                    let player_index = match gamemode {
-                        MeleeScene::VsMode => self.get_player_port().unwrap_or(0u8),
-                        _ => 0u8 // default to port 1, mostly the case in single player modes like training mode/unclepunch
-                    };
-                    let request = DiscordClientRequest::game(
-                        self.get_stage(),
-                        self.get_character(player_index),
-                        gamemode,
-                        timestamp
-                    );
-                    
-                    send_discord_msg!(request.clone());
+                    } else {
+                        send_discord_msg!(DiscordClientRequest::clear());
+                    }
+                } else if self.last_payload.req_type != DiscordClientRequestType::Clear {
+                    send_discord_msg!(DiscordClientRequest::clear());
                 }
-            } else if self.last_payload.is_some() {
-                discord_send.blocking_send(DiscordClientRequest::clear());
-                self.last_payload = None;
-            }
+            });
 
             sleep(1000);
         }

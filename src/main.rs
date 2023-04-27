@@ -1,12 +1,16 @@
 // #![windows_subsystem = "windows"]
 #![feature(generic_const_exprs)]
 
+#[macro_use]
+extern crate serde_derive;
+
 use discord::{DiscordClientRequest, DiscordClientRequestType};
 use single_instance::SingleInstance;
 use tokio_util::sync::CancellationToken;
 use tokio::sync::mpsc;
 use util::sleep;
 
+mod config;
 mod discord;
 mod tray;
 mod rank;
@@ -45,7 +49,7 @@ async fn main() {
     let discord_cancel_token = cancel_token.clone();
     tokio::spawn(async move {
         let mut discord_client = discord::start_client().unwrap();
-// discord_client.game(stage, character, mode);
+
         loop {
             if discord_cancel_token.is_cancelled() {
                 break
