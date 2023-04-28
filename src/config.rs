@@ -80,5 +80,5 @@ impl Default for AppConfig {
 }
 
 pub fn write_config(val: &AppConfig) {
-    val.save(&APP_INFO, PREFS_KEY);
+    let _ = val.save(&APP_INFO, PREFS_KEY);
 }

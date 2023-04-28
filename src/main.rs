@@ -34,14 +34,14 @@ async fn main() {
                 client.run(c_token, melee_tx);
             }).await;
             match res {
-                Ok(output) => { /* handle successfull exit */ },
+                Ok(_) => { /* handle successfull exit */ },
                 Err(err) if err.is_panic() => {
                     // panic
-                    tx.send(DiscordClientRequest::clear()).await;
+                    let _ = tx.send(DiscordClientRequest::clear()).await;
                     println!("[ERROR] Melee Client crashed. Restarting...");
                     sleep(500);
                 },
-                Err(err) => { return; }
+                Err(_) => { return; }
             }
         }
     });

@@ -192,9 +192,13 @@ impl MeleeClient {
                         _ => true
                     } {
                         let game_time = self.game_time();
-                        let timestamp = DiscordClientRequestTimestamp {
-                            mode: if self.timer_mode() == TimerMode::Countdown { DiscordClientRequestTimestampMode::End } else { DiscordClientRequestTimestampMode::Start },
-                            timestamp: if self.timer_mode() == TimerMode::Countdown { current_unix_time() + game_time } else { current_unix_time() - game_time }
+                        let timestamp = if c.global.show_in_game_time {
+                            DiscordClientRequestTimestamp {
+                                mode: if self.timer_mode() == TimerMode::Countdown { DiscordClientRequestTimestampMode::End } else { DiscordClientRequestTimestampMode::Start },
+                                timestamp: if self.timer_mode() == TimerMode::Countdown { current_unix_time() + game_time } else { current_unix_time() - game_time }
+                            }
+                        } else {
+                            DiscordClientRequestTimestamp::none()
                         };
                         let player_index = match gamemode {
                             MeleeScene::VsMode => self.get_player_port().unwrap_or(0u8),
@@ -202,7 +206,7 @@ impl MeleeClient {
                         };
                         let request = DiscordClientRequest::game(
                             self.get_stage(),
-                            self.get_character(player_index),
+                            if c.global.show_in_game_character { self.get_character(player_index) } else { None },
                             gamemode,
                             timestamp
                         );

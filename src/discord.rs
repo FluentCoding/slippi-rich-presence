@@ -1,6 +1,6 @@
 use discord_rich_presence::{activity::{self, Timestamps, Button}, DiscordIpc, DiscordIpcClient};
 
-use crate::{rank, util::current_unix_time, melee::{stage::{MeleeStage, OptionalMeleeStage}, character::{MeleeCharacter, OptionalMeleeCharacter}, MeleeScene, SlippiMenuScene}};
+use crate::{rank, util::current_unix_time, melee::{stage::{MeleeStage, OptionalMeleeStage}, character::{MeleeCharacter, OptionalMeleeCharacter}, MeleeScene, SlippiMenuScene}, config::CONFIG};
 use crate::util;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -12,6 +12,7 @@ pub enum DiscordClientRequestType {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum DiscordClientRequestTimestampMode {
+    None,
     Start,
     Static, // like Start, but we never update even if the timestamp changes. Used for non-ingame actions. 
     End
@@ -21,6 +22,10 @@ pub enum DiscordClientRequestTimestampMode {
 pub struct DiscordClientRequestTimestamp {
     pub mode: DiscordClientRequestTimestampMode,
     pub timestamp: i64
+}
+
+impl DiscordClientRequestTimestamp {
+    pub fn none() -> Self { Self { mode: DiscordClientRequestTimestampMode::None, timestamp: 0 } }
 }
 
 // we ignore this field
@@ -113,10 +118,13 @@ impl DiscordClient {
                         .small_image(character.as_discord_resource().as_str())
                         .small_text(character.to_string().as_str())
                 )
-                .timestamps(if (timestamp.mode as u8) < (DiscordClientRequestTimestampMode::End as u8) { Timestamps::new().start(timestamp.timestamp) } else { Timestamps::new().end(timestamp.timestamp) })
+                .timestamps(
+                    if timestamp.mode == DiscordClientRequestTimestampMode::None { Timestamps::new() }
+                    else if (timestamp.mode as u8) < (DiscordClientRequestTimestampMode::End as u8) { Timestamps::new().start(timestamp.timestamp) }
+                    else { Timestamps::new().end(timestamp.timestamp) })
                 .details(mode.as_str())
                 .state("In Game")
-        ).unwrap();
+        ).unwrap()
     }
     pub fn close(&mut self) {
         self.client.close().unwrap();

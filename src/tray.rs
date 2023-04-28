@@ -1,11 +1,39 @@
-use std::{mem::MaybeUninit, sync::{Mutex, atomic::{AtomicBool, self}, Arc}};
+use std::{mem::MaybeUninit, sync::{atomic::{AtomicBool, self}, Arc}};
 
 use trayicon::{TrayIconBuilder, MenuBuilder};
-use windows::Win32::UI::WindowsAndMessaging::{GetMessageA, TranslateMessage, DispatchMessageA};
+use windows::Win32::UI::WindowsAndMessaging::{GetMessageA, TranslateMessage, DispatchMessageA, PeekMessageA, PM_REMOVE};
 
 use crate::config::{CONFIG, AppConfig, write_config};
 
 use {std::sync::mpsc};
+
+struct ExtendedMenuBuilder(MenuBuilder<TrayEvents>);
+impl ExtendedMenuBuilder {
+    fn new() -> ExtendedMenuBuilder {
+        ExtendedMenuBuilder(MenuBuilder::<TrayEvents>::new())
+    }
+    fn checkable(self, name: &str, is_checked: bool, id: TrayEvents) -> Self {
+        ExtendedMenuBuilder(self.0.checkable(name, is_checked, id))
+    }
+    // checkable with enabled check
+    fn cwec(self, name: &str, is_checked: bool, id: TrayEvents, enable: bool) -> Self {
+        ExtendedMenuBuilder(self.0.with(trayicon::MenuItem::Checkable {
+            id,
+            name: name.into(),
+            disabled: !enable,
+            is_checked,
+            icon: None
+        }))
+    }
+    fn submenu(self, name: &str, menu: MenuBuilder<TrayEvents>) -> Self {
+        ExtendedMenuBuilder(self.0.submenu(name, menu))
+    }
+}
+impl From<ExtendedMenuBuilder> for MenuBuilder<TrayEvents> {
+    fn from(value: ExtendedMenuBuilder) -> Self {
+        value.0
+    }
+}
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 enum TrayEvents {
@@ -66,38 +94,43 @@ fn build_menu() -> MenuBuilder<TrayEvents> {
         .separator()
         .submenu(
             "Global",
-            MenuBuilder::new()
+                MenuBuilder::new()
                     .checkable("Show Character", c.global.show_in_game_character, TrayEvents::ShowInGameCharacter)
                     .checkable("Show In-Game Time", c.global.show_in_game_time, TrayEvents::ShowInGameTime)
         )
         .submenu(
             "Slippi Online",
-            MenuBuilder::new()
+            ExtendedMenuBuilder::new()
                     .checkable("Enabled", c.slippi.enabled, TrayEvents::EnableSlippi)
-                    .checkable("Show activity when searching", c.slippi.show_queueing, TrayEvents::SlippiShowQueueing)
+                    .cwec("Show activity when searching", c.slippi.show_queueing, TrayEvents::SlippiShowQueueing, c.slippi.enabled)
                     .submenu(
                         "Ranked",
-                        MenuBuilder::new()
-                            .checkable("Enabled", c.slippi.ranked.enabled, TrayEvents::SlippiEnableRanked)
-                            .checkable("Show rank", c.slippi.ranked.show_rank, TrayEvents::SlippiRankedShowRank)
-                            .checkable("Show \"View Ranked Profile\" button", c.slippi.ranked.show_view_ranked_profile_button, TrayEvents::SlippiRankedShowViewRankedProfileButton)
-                            .checkable("Show match score", c.slippi.ranked.show_score, TrayEvents::SlippiRankedShowScore)
+                    ExtendedMenuBuilder::new()
+                            .cwec("Enabled", c.slippi.ranked.enabled, TrayEvents::SlippiEnableRanked, c.slippi.enabled)
+                            .cwec("Show rank", c.slippi.ranked.show_rank, TrayEvents::SlippiRankedShowRank, c.slippi.enabled)
+                            .cwec("Show \"View Ranked Profile\" button", c.slippi.ranked.show_view_ranked_profile_button, TrayEvents::SlippiRankedShowViewRankedProfileButton, c.slippi.enabled)
+                            .cwec("Show match score", c.slippi.ranked.show_score, TrayEvents::SlippiRankedShowScore, c.slippi.enabled)
+                            .into()
                     )
                     .submenu(
                         "Unranked",
-                        MenuBuilder::new()
-                            .checkable("Enabled", c.slippi.unranked.enabled, TrayEvents::SlippiEnableUnranked)
+                        ExtendedMenuBuilder::new()
+                            .cwec("Enabled", c.slippi.unranked.enabled, TrayEvents::SlippiEnableUnranked, c.slippi.enabled)
+                            .into()
                     )
                     .submenu(
                         "Direct",
-                        MenuBuilder::new()
-                            .checkable("Enabled", c.slippi.direct.enabled, TrayEvents::SlippiEnableDirect)
+                        ExtendedMenuBuilder::new()
+                            .cwec("Enabled", c.slippi.direct.enabled, TrayEvents::SlippiEnableDirect, c.slippi.enabled)
+                            .into()
                     )
                     .submenu(
                         "Teams",
-                        MenuBuilder::new()
-                            .checkable("Enabled", c.slippi.teams.enabled, TrayEvents::SlippiEnableTeams)
+                        ExtendedMenuBuilder::new()
+                            .cwec("Enabled", c.slippi.teams.enabled, TrayEvents::SlippiEnableTeams, c.slippi.enabled)
+                            .into()
                     )
+                    .into()
         )
         .submenu(
             "UnclePunch",
@@ -126,8 +159,8 @@ fn build_menu() -> MenuBuilder<TrayEvents> {
 }
 
 pub fn run_tray() {
-    let mut should_end = Arc::new(AtomicBool::new(false));
-    let mut shared_should_end = should_end.clone();
+    let should_end = Arc::new(AtomicBool::new(false));
+    let shared_should_end = should_end.clone();
 
     let (s, r) = mpsc::channel::<TrayEvents>();
     let icon_raw = include_bytes!("../assets/icon.ico");
@@ -184,12 +217,10 @@ pub fn run_tray() {
         }
         unsafe {
             let mut msg = MaybeUninit::uninit();
-            let bret = GetMessageA(msg.as_mut_ptr(), None, 0, 0);
+            let bret = PeekMessageA(msg.as_mut_ptr(), None, 0, 0, PM_REMOVE);
             if bret.as_bool() {
                 TranslateMessage(msg.as_ptr());
                 DispatchMessageA(msg.as_ptr());
-            } else {
-                break;
             }
         }
     }
