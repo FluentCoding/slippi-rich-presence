@@ -890,6 +890,7 @@ name = "slippi-rich-presence"
 version = "0.1.0"
 dependencies = [
  "discord-rich-presence",
+ "encoding_rs",
  "num_enum",
  "preferences",
  "reqwest",

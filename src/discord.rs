@@ -1,6 +1,6 @@
 use discord_rich_presence::{activity::{self, Timestamps, Button}, DiscordIpc, DiscordIpcClient};
 
-use crate::{rank, util::current_unix_time, melee::{stage::{MeleeStage, OptionalMeleeStage}, character::{MeleeCharacter, OptionalMeleeCharacter}, MeleeScene, SlippiMenuScene}, config::CONFIG};
+use crate::{util::current_unix_time, melee::{stage::{MeleeStage, OptionalMeleeStage}, character::{MeleeCharacter, OptionalMeleeCharacter}, MeleeScene, SlippiMenuScene}, rank};
 use crate::util;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -84,28 +84,32 @@ impl DiscordClient {
         self.client.clear_activity().unwrap();
     }
     pub async fn queue(&mut self, scene: Option<SlippiMenuScene>, character: OptionalMeleeCharacter) {
-        let mut large_image = "".to_string();
-        let mut large_text = "".to_string();
+        let mut large_image = OptionalMeleeStage(None).as_discord_resource();
+        let mut large_text = OptionalMeleeStage(None).to_string();
+        let mut buttons = Vec::with_capacity(1);
+        let mut _i_unfortunately_have_to_use_this_variable_because_of_rust_but_im_thankful_for_it = "".to_string();
         if scene.unwrap_or(SlippiMenuScene::Direct) == SlippiMenuScene::Ranked {
             let rank_info = rank::get_rank_info("flcd-507").await.unwrap(); // TODO replace code later
             large_image = rank_info.name.to_lowercase().replace(" ", "_");
             large_text = format!("{} | {} ELO", rank_info.name, util::round(rank_info.elo, 2));
+            _i_unfortunately_have_to_use_this_variable_because_of_rust_but_im_thankful_for_it = format!("https://slippi.gg/user/{}", "flcd-507");
+            buttons.push(Button::new("View Ranked Profile", _i_unfortunately_have_to_use_this_variable_because_of_rust_but_im_thankful_for_it.as_str()));
         }
 
         self.client.set_activity(
             activity::Activity::new()
-                .assets(
-                    activity::Assets::new()
-                        .large_image(large_image.as_str())
-                        .large_text(large_text.as_str())
-                        .small_image(character.as_discord_resource().as_str())
+                .assets({
+                    let mut activity = activity::Assets::new();
+                    if !large_image.is_empty() { activity = activity.large_image(large_image.as_str()); }
+                    if !large_text.is_empty() { activity = activity.large_text(large_text.as_str()); }
+                    activity.small_image(character.as_discord_resource().as_str())
                         .small_text(character.to_string().as_str())
-                )
-                .buttons(vec![Button::new("View Ranked Profile", format!("https://slippi.gg/user/{}", "flcd-507").as_str())])
+                })
+                .buttons(buttons)
                 .timestamps(self.current_timestamp())
                 .details(scene.and_then(|v| Some(v.to_string())).or(Some("".to_string())).unwrap().as_str())
                 .state("In Queue")
-        ).unwrap();
+        ).unwrap()
         
     }
     pub fn game(&mut self, stage: OptionalMeleeStage, character: OptionalMeleeCharacter, mode: String, timestamp: DiscordClientRequestTimestamp) {

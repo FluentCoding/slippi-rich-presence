@@ -96,7 +96,7 @@ impl Display for OptionalMeleeStage {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match &(*self).0 {
 			Some(v) => write!(f, "{}", v),
-			_ => write!(f, "Unknown")
+			_ => write!(f, "Unknown stage")
 		}
 	}
 }

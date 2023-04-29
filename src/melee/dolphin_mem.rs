@@ -2,6 +2,7 @@ use std::ffi::c_void;
 use std::mem;
 use std::str::from_utf8_unchecked;
 
+use encoding_rs::SHIFT_JIS;
 use windows::Win32::Foundation::ERROR_PARTIAL_COPY;
 use windows::Win32::Foundation::GetLastError;
 use windows::Win32::System::Diagnostics::Debug::ReadProcessMemory;
@@ -11,6 +12,8 @@ use windows::Win32::System::ProcessStatus::PSAPI_WORKING_SET_EX_BLOCK;
 use windows::Win32::System::ProcessStatus::PSAPI_WORKING_SET_EX_INFORMATION;
 use windows::Win32::System::ProcessStatus::QueryWorkingSetEx;
 use windows::Win32::{System::{Diagnostics::ToolHelp::{CreateToolhelp32Snapshot, PROCESSENTRY32, TH32CS_SNAPPROCESS, Process32Next}, Threading::{OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ, GetExitCodeProcess}}, Foundation::{STILL_ACTIVE, HANDLE, CloseHandle}};
+
+use super::msrb::MSRBOffset;
 
 const VALID_PROCESS_NAMES: &'static [&'static str] = &["Dolphin.exe", "Slippi Dolphin.exe", "DolphinWx.exe", "DolphinQt2.exe"];
 const GC_RAM_START: u32 = 0x80000000;
@@ -22,6 +25,11 @@ pub struct DolphinMemory {
     process_handle: Option<HANDLE>,
     dolphin_base_addr: Option<*mut c_void>,
     dolphin_addr_size: Option<usize>
+}
+
+pub trait MSRBAccess {
+    fn read_msrb<T: Sized>(&mut self, offset: MSRBOffset) -> Option<T> where [u8; mem::size_of::<T>()]: { None }
+    fn read_msrb_string_shift_jis<const LEN: usize>(&mut self, offset: MSRBOffset) -> Option<String> where [u8; mem::size_of::<[u8; LEN]>()]: { None }
 }
 
 impl DolphinMemory {
@@ -144,6 +152,33 @@ impl DolphinMemory {
         };
     }
 
+    pub fn read_string_shift_jis<const LEN: usize>(&mut self, addr: u32) -> Option<String> where [(); mem::size_of::<[u8; LEN]>()]:{
+        let res = self.read::<[u8; LEN]>(addr);
+        if res.is_none() {
+            return None;
+        }
+
+        let mut raw = res.unwrap();
+        raw.reverse(); // we apparently have to reverse it again due to how the string is gathered
+
+        let (dec_res, _enc, errors) = SHIFT_JIS.decode(&raw);
+        if errors {
+            panic!("Invalid shift-jis string => {:?}", res.unwrap())
+        }
+        return Some(dec_res.as_ref().trim_end_matches(char::from(0)).to_string());
+    }
+
+    fn pointer_indirection(&mut self, addr: u32, amount: u32) -> Option<u32> {
+        let mut curr = self.read::<u32>(addr);
+        for n in 2..=amount {
+            if curr.is_none() {
+                return None;
+            }
+            curr = self.read::<u32>(curr.unwrap());
+        }
+        curr
+    }
+
     /*pub fn write(&self) {
 
     }*/
@@ -193,5 +228,16 @@ impl DolphinMemory {
         self.process_handle = None;
         self.dolphin_base_addr = None;
         self.dolphin_addr_size = None;
+    }
+}
+
+const CSSDT_BUF_ADDR: u32 = 0x80005614; // reference: https://github.com/project-slippi/slippi-ssbm-asm/blob/0be644aff85986eae17e96f4c98b3342ab087d05/Online/Online.s#L31
+impl MSRBAccess for DolphinMemory {
+    fn read_msrb<T: Sized>(&mut self, offset: MSRBOffset) -> Option<T> where [u8; mem::size_of::<T>()]: {
+        self.pointer_indirection(CSSDT_BUF_ADDR, 2).and_then(|ptr| self.read::<T>(ptr + offset as u32))
+    }
+    // in shift-jis
+    fn read_msrb_string_shift_jis<const LEN: usize>(&mut self, offset: MSRBOffset) -> Option<String> where [u8; mem::size_of::<[u8; LEN]>()]: {
+        self.pointer_indirection(CSSDT_BUF_ADDR, 2).and_then(|ptr| self.read_string_shift_jis::<LEN>(ptr + offset as u32))
     }
 }
