@@ -182,7 +182,7 @@ impl MeleeClient {
                                 let port_op = self.get_player_port();
                                 if !port_op.is_none() {
                                     let port = port_op.unwrap();
-                                    let character = self.get_character_selection(port);
+                                    let character = if c.global.show_in_game_character { self.get_character_selection(port) } else { Some(MeleeCharacter::Hidden) };
                                     match gamemode {
                                         MeleeScene::SlippiCss(scene) => {
                                             let request = DiscordClientRequest::queue(
@@ -230,7 +230,7 @@ impl MeleeClient {
                         }.unwrap_or(0u8);
                         let request = DiscordClientRequest::game(
                             self.get_stage(),
-                            if c.global.show_in_game_character { self.get_character(player_index) } else { None },
+                            if c.global.show_in_game_character { self.get_character(player_index) } else { Some(MeleeCharacter::Hidden) },
                             gamemode,
                             timestamp
                         );

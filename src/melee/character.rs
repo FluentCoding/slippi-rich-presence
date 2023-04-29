@@ -30,7 +30,8 @@ pub enum MeleeCharacter {
 	Mewtwo = 0x0A,
 	MrGameAndWatch = 0x03,
 	Marth = 0x09,
-	Roy = 0x17
+	Roy = 0x17,
+	Hidden = 0xFF
 }
 
 impl MeleeCharacter {
@@ -96,6 +97,7 @@ impl Display for MeleeCharacter {
 			Self::MrGameAndWatch => write!(f, "Mr. Game & Watch"),
 			Self::Marth => write!(f, "Marth"),
 			Self::Roy => write!(f, "Roy"),
+			Self::Hidden => write!(f, "Hidden")
 		}
 	}
 }
@@ -104,7 +106,10 @@ impl Display for MeleeCharacter {
 pub struct OptionalMeleeCharacter(pub Option<MeleeCharacter>);
 impl OptionalMeleeCharacter {
 	pub fn as_discord_resource(&self) -> String {
-		self.0.as_ref().and_then(|c| Some(format!("char{}", (*c) as u8))).unwrap_or("questionmark".to_string())
+		self.0.as_ref().and_then(|c|
+			if *c == MeleeCharacter::Hidden { Some("transparent".to_string()) }
+			else { Some(format!("char{}", (*c) as u8) ) }
+		).unwrap_or("questionmark".to_string())
 	}
 }
 impl Display for OptionalMeleeCharacter {

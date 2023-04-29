@@ -80,7 +80,7 @@ impl Display for MeleeStage {
             Self::OldStory => write!(f, "Yoshi's Island (N64)"),
             Self::OldKongo => write!(f, "Kongo Jungle (N64)"),
             Self::Battle => write!(f, "Battlefield"),
-            Self::FD => write!(f, "Final Destination"),
+            Self::FD => write!(f, "Final Destination")
         }
     }
 }

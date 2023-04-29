@@ -1,9 +1,25 @@
 use std::fs;
 
 use directories::BaseDirs;
+use lazy_static::lazy_static;
+use regex::Regex;
 use serde_json::Value;
 
-pub fn get_connect_code() -> Option<String> {
+pub struct ConnectCode(String);
+impl ConnectCode {
+    pub fn is_valid(&self) -> bool {
+        lazy_static! {
+            static ref RE: Regex = Regex::new("^([A-Za-z0-9])+#[0-9]{1,6}$").unwrap();
+        }
+        RE.is_match(self.0.as_str())
+    }
+
+    pub fn as_url(&self) -> String {
+        self.0.to_lowercase().replace("#", "-")
+    }
+}
+
+pub fn get_connect_code() -> Option<ConnectCode> {
     if let Some(base_dirs) = BaseDirs::new() {
         let user_json_path = base_dirs.config_dir().join("Slippi Launcher/netplay/User/Slippi/user.json");
         if user_json_path.is_file() && user_json_path.exists() {
@@ -11,7 +27,7 @@ pub fn get_connect_code() -> Option<String> {
                 Ok(data) => {
                     let v = serde_json::from_str::<Value>(data.as_str());
                     match v {
-                        Ok(data) => data["connectCode"].as_str().and_then(|v| Some(v.to_string())),
+                        Ok(data) => data["connectCode"].as_str().and_then(|v| Some(ConnectCode(v.to_string()))),
                         _ => None
                     }
                 },
