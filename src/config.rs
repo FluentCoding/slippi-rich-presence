@@ -1,6 +1,8 @@
 use preferences::{AppInfo, Preferences};
 use ruspiro_singleton::Singleton;
 
+use crate::melee::SlippiMenuScene;
+
 const APP_INFO: AppInfo = AppInfo {
     name: "conf",
     author: "Slippi Discord Integration",
@@ -81,4 +83,16 @@ impl Default for AppConfig {
 
 pub fn write_config(val: &AppConfig) {
     let _ = val.save(&APP_INFO, PREFS_KEY);
+}
+
+// Utility implementations
+impl SlippiMenuScene {
+    pub fn is_enabled(&self, c: &AppConfig) -> bool {
+        match *self {
+            SlippiMenuScene::Ranked => c.slippi.ranked.enabled,
+            SlippiMenuScene::Unranked => c.slippi.unranked.enabled,
+            SlippiMenuScene::Direct => c.slippi.direct.enabled,
+            SlippiMenuScene::Teams => c.slippi.teams.enabled
+        }
+    }
 }

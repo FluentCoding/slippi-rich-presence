@@ -1,3 +1,7 @@
+use std::mem;
+
+use super::dolphin_mem::DolphinMemory;
+
 const MATCH_STRUCT_LEN: isize = 0x138;
 
 // reference: https://github.com/project-slippi/slippi-ssbm-asm/blob/0be644aff85986eae17e96f4c98b3342ab087d05/Online/Online.s#L311-L344
@@ -34,4 +38,18 @@ pub enum MSRBOffset {
     MsrbGameInfoBlock = Self::MsrbErrorMsg as isize + Self::ErrorMessageLen as isize, // MATCH_STRUCT_LEN
     MsrbMatchId = Self::MsrbGameInfoBlock as isize + MATCH_STRUCT_LEN,   // char[51]
     MsrbSize = Self::MsrbMatchId as isize + 51,
+}
+
+impl DolphinMemory {
+    fn msrb_ptr(&mut self) -> Option<u32> {
+        const CSSDT_BUF_ADDR: u32 = 0x80005614; // reference: https://github.com/project-slippi/slippi-ssbm-asm/blob/0be644aff85986eae17e96f4c98b3342ab087d05/Online/Online.s#L31
+        self.pointer_indirection(CSSDT_BUF_ADDR, 2)
+    }
+    pub fn read_msrb<T: Sized>(&mut self, offset: MSRBOffset) -> Option<T> where [u8; mem::size_of::<T>()]: {
+        self.msrb_ptr().and_then(|ptr| self.read::<T>(ptr + offset as u32))
+    }
+    // in shift-jis
+    pub fn read_msrb_string_shift_jis<const LEN: usize>(&mut self, offset: MSRBOffset) -> Option<String> where [u8; mem::size_of::<[u8; LEN]>()]: {
+        self.msrb_ptr().and_then(|ptr| self.read_string_shift_jis::<LEN>(ptr + offset as u32))
+    }
 }

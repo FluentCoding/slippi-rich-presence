@@ -1,7 +1,7 @@
 use std::{mem::MaybeUninit, sync::{atomic::{AtomicBool, self}, Arc}};
 
 use trayicon::{TrayIconBuilder, MenuBuilder};
-use windows::Win32::UI::WindowsAndMessaging::{GetMessageA, TranslateMessage, DispatchMessageA, PeekMessageA, PM_REMOVE};
+use windows::Win32::UI::WindowsAndMessaging::{TranslateMessage, DispatchMessageA, PeekMessageA, PM_REMOVE};
 
 use crate::config::{CONFIG, AppConfig, write_config};
 
@@ -16,11 +16,11 @@ impl ExtendedMenuBuilder {
         ExtendedMenuBuilder(self.0.checkable(name, is_checked, id))
     }
     // checkable with enabled check
-    fn cwec(self, name: &str, is_checked: bool, id: TrayEvents, enable: bool) -> Self {
+    fn cwec(self, name: &str, is_checked: bool, id: TrayEvents, enable: &[bool]) -> Self {
         ExtendedMenuBuilder(self.0.with(trayicon::MenuItem::Checkable {
             id,
             name: name.into(),
-            disabled: !enable,
+            disabled: enable.iter().any(|v| !v),
             is_checked,
             icon: None
         }))
@@ -102,32 +102,32 @@ fn build_menu() -> MenuBuilder<TrayEvents> {
             "Slippi Online",
             ExtendedMenuBuilder::new()
                     .checkable("Enabled", c.slippi.enabled, TrayEvents::EnableSlippi)
-                    .cwec("Show activity when searching", c.slippi.show_queueing, TrayEvents::SlippiShowQueueing, c.slippi.enabled)
+                    .cwec("Show activity when searching", c.slippi.show_queueing, TrayEvents::SlippiShowQueueing, &[c.slippi.enabled])
                     .submenu(
                         "Ranked",
                     ExtendedMenuBuilder::new()
-                            .cwec("Enabled", c.slippi.ranked.enabled, TrayEvents::SlippiEnableRanked, c.slippi.enabled)
-                            .cwec("Show rank", c.slippi.ranked.show_rank, TrayEvents::SlippiRankedShowRank, c.slippi.enabled)
-                            .cwec("Show \"View Ranked Profile\" button", c.slippi.ranked.show_view_ranked_profile_button, TrayEvents::SlippiRankedShowViewRankedProfileButton, c.slippi.enabled)
-                            .cwec("Show match score", c.slippi.ranked.show_score, TrayEvents::SlippiRankedShowScore, c.slippi.enabled)
+                            .cwec("Enabled", c.slippi.ranked.enabled, TrayEvents::SlippiEnableRanked, &[c.slippi.enabled])
+                            .cwec("Show rank", c.slippi.ranked.show_rank, TrayEvents::SlippiRankedShowRank, &[c.slippi.enabled, c.slippi.ranked.enabled])
+                            .cwec("Show \"View Ranked Profile\" button", c.slippi.ranked.show_view_ranked_profile_button, TrayEvents::SlippiRankedShowViewRankedProfileButton, &[c.slippi.enabled, c.slippi.ranked.enabled])
+                            .cwec("Show match score", c.slippi.ranked.show_score, TrayEvents::SlippiRankedShowScore, &[c.slippi.enabled, c.slippi.ranked.enabled])
                             .into()
                     )
                     .submenu(
                         "Unranked",
                         ExtendedMenuBuilder::new()
-                            .cwec("Enabled", c.slippi.unranked.enabled, TrayEvents::SlippiEnableUnranked, c.slippi.enabled)
+                            .cwec("Enabled", c.slippi.unranked.enabled, TrayEvents::SlippiEnableUnranked, &[c.slippi.enabled])
                             .into()
                     )
                     .submenu(
                         "Direct",
                         ExtendedMenuBuilder::new()
-                            .cwec("Enabled", c.slippi.direct.enabled, TrayEvents::SlippiEnableDirect, c.slippi.enabled)
+                            .cwec("Enabled", c.slippi.direct.enabled, TrayEvents::SlippiEnableDirect, &[c.slippi.enabled])
                             .into()
                     )
                     .submenu(
                         "Teams",
                         ExtendedMenuBuilder::new()
-                            .cwec("Enabled", c.slippi.teams.enabled, TrayEvents::SlippiEnableTeams, c.slippi.enabled)
+                            .cwec("Enabled", c.slippi.teams.enabled, TrayEvents::SlippiEnableTeams, &[c.slippi.enabled])
                             .into()
                     )
                     .into()

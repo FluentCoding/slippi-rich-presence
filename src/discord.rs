@@ -1,6 +1,6 @@
 use discord_rich_presence::{activity::{self, Timestamps, Button}, DiscordIpc, DiscordIpcClient};
 
-use crate::{util::current_unix_time, melee::{stage::{MeleeStage, OptionalMeleeStage}, character::{MeleeCharacter, OptionalMeleeCharacter}, MeleeScene, SlippiMenuScene}, rank};
+use crate::{util::current_unix_time, melee::{stage::{MeleeStage, OptionalMeleeStage}, character::{MeleeCharacter, OptionalMeleeCharacter}, MeleeScene, SlippiMenuScene, dolphin_user::get_connect_code}, rank};
 use crate::util;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -89,11 +89,17 @@ impl DiscordClient {
         let mut buttons = Vec::with_capacity(1);
         let mut _i_unfortunately_have_to_use_this_variable_because_of_rust_but_im_thankful_for_it = "".to_string();
         if scene.unwrap_or(SlippiMenuScene::Direct) == SlippiMenuScene::Ranked {
-            let rank_info = rank::get_rank_info("flcd-507").await.unwrap(); // TODO replace code later
-            large_image = rank_info.name.to_lowercase().replace(" ", "_");
-            large_text = format!("{} | {} ELO", rank_info.name, util::round(rank_info.elo, 2));
-            _i_unfortunately_have_to_use_this_variable_because_of_rust_but_im_thankful_for_it = format!("https://slippi.gg/user/{}", "flcd-507");
-            buttons.push(Button::new("View Ranked Profile", _i_unfortunately_have_to_use_this_variable_because_of_rust_but_im_thankful_for_it.as_str()));
+            let connect_code_opt = get_connect_code();
+            if connect_code_opt.is_some() {
+                let connect_code = connect_code_opt.unwrap();
+                let fmt_code = connect_code.to_lowercase().replace("#", "-");
+                println!("{}", fmt_code);
+                let rank_info = rank::get_rank_info(fmt_code.as_str()).await.unwrap(); // TODO replace code later
+                large_image = rank_info.name.to_lowercase().replace(" ", "_");
+                large_text = format!("{} | {} ELO", rank_info.name, util::round(rank_info.elo, 2));
+                _i_unfortunately_have_to_use_this_variable_because_of_rust_but_im_thankful_for_it = format!("https://slippi.gg/user/{}", fmt_code.as_str());
+                buttons.push(Button::new("View Ranked Profile", _i_unfortunately_have_to_use_this_variable_because_of_rust_but_im_thankful_for_it.as_str()));
+            }
         }
 
         self.client.set_activity(

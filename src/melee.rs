@@ -6,16 +6,15 @@ use strum_macros::{Display, EnumIter};
 use tokio::sync::mpsc::Sender;
 use tokio_util::sync::CancellationToken;
 
-use crate::{discord::{DiscordClientRequest, DiscordClientRequestType, DiscordClientRequestTimestamp, DiscordClientRequestTimestampMode}, util::{current_unix_time, sleep}, melee::{stage::MeleeStage, character::MeleeCharacter}, config::{CONFIG}};
+use crate::{discord::{DiscordClientRequest, DiscordClientRequestType, DiscordClientRequestTimestamp, DiscordClientRequestTimestampMode}, util::{current_unix_time, sleep}, melee::{stage::MeleeStage, character::MeleeCharacter}, config::{CONFIG, AppConfig}};
 
-use self::{dolphin_mem::{DolphinMemory, MSRBAccess}, msrb::MSRBOffset};
+use self::{dolphin_mem::{DolphinMemory, util::R13}, msrb::MSRBOffset};
 
 mod dolphin_mem;
 mod msrb;
 pub mod stage;
 pub mod character;
-
-macro_rules! R13 {($offset:expr) => { 0x804db6a0 - $offset }}
+pub mod dolphin_user;
 
 // reference: https://github.com/akaneia/m-ex/blob/master/MexTK/include/match.h#L11-L14
 #[derive(PartialEq, EnumIter, Clone, Copy)]
@@ -56,8 +55,8 @@ pub enum MeleeScene {
     VsMode,
     UnclePunch,
     TrainingMode,
-    SlippiOnline,
-    SlippiCss
+    SlippiOnline(Option<SlippiMenuScene>),
+    SlippiCss(Option<SlippiMenuScene>)
 }
 
 impl Display for MeleeScene {
@@ -66,8 +65,12 @@ impl Display for MeleeScene {
             Self::VsMode => write!(f, "Vs. Mode"),
             Self::UnclePunch => write!(f, "UnclePunch Training Mode"),
             Self::TrainingMode => write!(f, "Training Mode"),
-            Self::SlippiOnline => write!(f, "Slippi Online"),
-            Self::SlippiCss => write!(f, "Character Select Screen"),
+            Self::SlippiOnline(Some(SlippiMenuScene::Ranked)) => write!(f, "Ranked"),
+            Self::SlippiOnline(Some(SlippiMenuScene::Unranked)) => write!(f, "Unranked"),
+            Self::SlippiOnline(Some(SlippiMenuScene::Direct)) => write!(f, "Direct"),
+            Self::SlippiOnline(Some(SlippiMenuScene::Teams)) => write!(f, "Teams"),
+            Self::SlippiOnline(None) => write!(f, "Slippi Online"),
+            Self::SlippiCss(_) => unimplemented!(),
         }
     }
 }
@@ -77,9 +80,6 @@ impl MeleeClient {
         MeleeClient { mem: DolphinMemory::new(), last_payload: DiscordClientRequest::clear() }
     }
 
-    // fn osb_data_ptr(&mut self) -> Option<u32> { self.pointer_indirection(, amount)}
-
-    // Fetching functions
     fn get_player_port(&mut self) -> Option<u8> { self.mem.read::<u8>(R13!(0x5108)) }
     fn get_slippi_player_port(&mut self) -> Option<u8> { self.mem.read_msrb(MSRBOffset::MsrbLocalPlayerIndex) }
     fn get_player_connect_code(&mut self, port: u8) -> Option<String> {
@@ -122,12 +122,6 @@ impl MeleeClient {
             _ => None
         }
     }*/
-    fn get_connect_code(&mut self) {
-        // reference: https://github.com/project-slippi/slippi-ssbm-asm/blob/9c36ffc5e4787c6caadfb12727c5fcff07d64642/Online/Online.s#L376-L378
-        const OSB_APP_STATE: u32 = 0;
-        const OSB_PLAYER_NAME: u32 = OSB_APP_STATE + 1;
-        const OSB_CONNECT_CODE: u32 = OSB_PLAYER_NAME + 31;
-    }
     fn get_melee_scene(&mut self) -> Option<MeleeScene> {
         const MAJOR_SCENE: u32 = 0x80479D30;
         const MINOR_SCENE: u32 = MAJOR_SCENE + 0x03;
@@ -137,8 +131,8 @@ impl MeleeClient {
             (2, 2) => Some(MeleeScene::VsMode),
             (43, 1) => Some(MeleeScene::UnclePunch),
             (28, 2) => Some(MeleeScene::TrainingMode),
-            (8, 2) => Some(MeleeScene::SlippiOnline),
-            (8, 0) => Some(MeleeScene::SlippiCss),
+            (8, 2) => Some(MeleeScene::SlippiOnline(self.slippi_online_scene())),
+            (8, 0) => Some(MeleeScene::SlippiCss(self.slippi_online_scene())),
             _ => None
         }
     }
@@ -151,6 +145,7 @@ impl MeleeClient {
     }
 
     pub fn run(&mut self, stop_signal: CancellationToken, discord_send: Sender<DiscordClientRequest>) {
+        const RUN_INTERVAL: u64 = 1000;
         macro_rules! send_discord_msg {
             ($req:expr) => {
                 if self.last_payload != $req {
@@ -173,23 +168,31 @@ impl MeleeClient {
             CONFIG.with_ref(|c| {
                 // self.get_game_variant();
                 let gamemode_opt = self.get_melee_scene();
-                // println!(c)
                 if gamemode_opt.is_some() {
                     let gamemode = gamemode_opt.unwrap();
 
                     // Check if we are queueing a game
-                    if gamemode == MeleeScene::SlippiCss && c.slippi.show_queueing {
+                    if c.slippi.enabled && c.slippi.show_queueing && match gamemode {
+                        MeleeScene::SlippiCss(scene) =>
+                            scene.and_then(|s| Some(s.is_enabled(c))).unwrap_or(true),
+                        _ => false
+                    } {
                         match self.matchmaking_type() {
                             Some(MatchmakingMode::Initializing) | Some(MatchmakingMode::Matchmaking) => {
                                 let port_op = self.get_player_port();
                                 if !port_op.is_none() {
                                     let port = port_op.unwrap();
                                     let character = self.get_character_selection(port);
-                                    let request = DiscordClientRequest::queue(
-                                        self.slippi_online_scene(),
-                                        character
-                                    );
-                                    send_discord_msg!(request.clone());
+                                    match gamemode {
+                                        MeleeScene::SlippiCss(scene) => {
+                                            let request = DiscordClientRequest::queue(
+                                                scene,
+                                                character
+                                            );
+                                            send_discord_msg!(request.clone());
+                                        },
+                                        _ => {/* shouldn't happen */}
+                                    }
                                 }
                             }
                             Some(_) => {
@@ -197,16 +200,11 @@ impl MeleeClient {
                             }, // sometimes it's none, probably because the pointer indirection changes during the asynchronous memory requests
                             _ => {}
                         }
-                    // Else, we want to see if the current game mode is enabled in the config
-                    } else if gamemode != MeleeScene::SlippiCss && match gamemode {
-                        MeleeScene::SlippiOnline => {
-                            self.slippi_online_scene().and_then(|s| Some(match s {
-                                SlippiMenuScene::Ranked => c.slippi.ranked.enabled,
-                                SlippiMenuScene::Unranked => c.slippi.unranked.enabled,
-                                SlippiMenuScene::Direct => c.slippi.direct.enabled,
-                                SlippiMenuScene::Teams => c.slippi.teams.enabled,
-                            })).unwrap_or(true)
-                        },
+                    // Else, we want to see if the current game mode is enabled in the config (we're in-game)
+                    } else if match gamemode {
+                        MeleeScene::SlippiCss(_) => false, // if we are in css, ignore
+                        MeleeScene::SlippiOnline(scene) => c.slippi.enabled &&
+                            scene.and_then(|s| Some(s.is_enabled(c))).unwrap_or(true),
                         MeleeScene::UnclePunch => c.uncle_punch.enabled,
                         MeleeScene::TrainingMode => c.training_mode.enabled,
                         MeleeScene::VsMode => c.vs_mode.enabled,
@@ -227,7 +225,7 @@ impl MeleeClient {
                         };
                         let player_index = match gamemode {
                             MeleeScene::VsMode => self.get_player_port(),
-                            MeleeScene::SlippiOnline => self.get_slippi_player_port(),
+                            MeleeScene::SlippiOnline(_) => self.get_slippi_player_port(),
                             _ => Some(0u8) // default to port 1, mostly the case in single player modes like training mode/unclepunch
                         }.unwrap_or(0u8);
                         let request = DiscordClientRequest::game(
@@ -246,7 +244,7 @@ impl MeleeClient {
                 }
             });
 
-            sleep(1000);
+            sleep(RUN_INTERVAL);
         }
     }
 }
