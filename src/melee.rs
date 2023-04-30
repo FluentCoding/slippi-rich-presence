@@ -56,7 +56,8 @@ pub enum MeleeScene {
     UnclePunch,
     TrainingMode,
     SlippiOnline(Option<SlippiMenuScene>),
-    SlippiCss(Option<SlippiMenuScene>)
+    SlippiCss(Option<SlippiMenuScene>),
+    HomeRunContest
 }
 
 impl Display for MeleeScene {
@@ -70,6 +71,7 @@ impl Display for MeleeScene {
             Self::SlippiOnline(Some(SlippiMenuScene::Direct)) => write!(f, "Direct"),
             Self::SlippiOnline(Some(SlippiMenuScene::Teams)) => write!(f, "Teams"),
             Self::SlippiOnline(None) => write!(f, "Slippi Online"),
+            Self::HomeRunContest => write!(f, "Home-Run Contest"),
             Self::SlippiCss(_) => unimplemented!(),
         }
     }
@@ -133,10 +135,12 @@ impl MeleeClient {
             (28, 2) => Some(MeleeScene::TrainingMode),
             (8, 2) => Some(MeleeScene::SlippiOnline(self.slippi_online_scene())),
             (8, 0) => Some(MeleeScene::SlippiCss(self.slippi_online_scene())),
+            (32, 1) => Some(MeleeScene::HomeRunContest),
             _ => None
         }
     }
     fn get_stage(&mut self) -> Option<MeleeStage> {
+        println!("{:?}", self.mem.read::<u8>( 0x8049E6C8 + 0x88 + 0x03));
         self.mem.read::<u8>( 0x8049E6C8 + 0x88 + 0x03).and_then(|v| MeleeStage::try_from(v).ok())
     }
     fn get_character(&mut self, player_id: u8) -> Option<MeleeCharacter> {
