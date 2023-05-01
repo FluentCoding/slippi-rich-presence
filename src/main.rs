@@ -60,7 +60,7 @@ async fn main() {
                 println!("{:?}", msg);
                 match msg.req_type {
                     DiscordClientRequestType::Queue => discord_client.queue(msg.scene, msg.character).await,
-                    DiscordClientRequestType::Game => discord_client.game(msg.stage, msg.character, msg.mode, msg.timestamp),
+                    DiscordClientRequestType::Game => discord_client.game(msg.stage, msg.character, msg.mode, msg.timestamp, msg.opp_name),
                     DiscordClientRequestType::Clear => discord_client.clear()
                 }
             }

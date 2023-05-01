@@ -1,6 +1,6 @@
 use discord_rich_presence::{activity::{self, Timestamps, Button}, DiscordIpc, DiscordIpcClient};
 
-use crate::{util::current_unix_time, melee::{stage::{MeleeStage, OptionalMeleeStage}, character::{MeleeCharacter, OptionalMeleeCharacter}, MeleeScene, SlippiMenuScene, dolphin_user::get_connect_code}, rank};
+use crate::{util::current_unix_time, melee::{stage::{MeleeStage, OptionalMeleeStage}, character::{MeleeCharacter, OptionalMeleeCharacter}, MeleeScene, SlippiMenuScene, dolphin_user::get_connect_code}, rank, config::CONFIG};
 use crate::util;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -44,12 +44,24 @@ pub struct DiscordClientRequest {
     pub stage: OptionalMeleeStage,
     pub character: OptionalMeleeCharacter,
     pub mode: String,
-    pub timestamp: DiscordClientRequestTimestamp
+    pub timestamp: DiscordClientRequestTimestamp,
+    pub opp_name: Option<String>
 }
 
 impl Default for DiscordClientRequest {
     fn default() -> Self {
-        DiscordClientRequest { req_type: DiscordClientRequestType::Clear, scene: None, stage: OptionalMeleeStage(None), character: OptionalMeleeCharacter(None), mode: "".to_string(), timestamp: DiscordClientRequestTimestamp { mode: DiscordClientRequestTimestampMode::Static, timestamp: current_unix_time() } }
+        DiscordClientRequest {
+            req_type: DiscordClientRequestType::Clear,
+            scene: None,
+            stage: OptionalMeleeStage(None),
+            character: OptionalMeleeCharacter(None),
+            mode: "".to_string(),
+            timestamp: DiscordClientRequestTimestamp {
+                mode: DiscordClientRequestTimestampMode::Static,
+                timestamp: current_unix_time(),
+            },
+            opp_name: None
+        }
     }
 }
 
@@ -63,13 +75,14 @@ impl DiscordClientRequest {
             ..Default::default()
         }
     }
-    pub fn game(stage: Option<MeleeStage>, character: Option<MeleeCharacter>, mode: MeleeScene, timestamp: DiscordClientRequestTimestamp) -> Self {
+    pub fn game(stage: Option<MeleeStage>, character: Option<MeleeCharacter>, mode: MeleeScene, timestamp: DiscordClientRequestTimestamp, opp_name: Option<String>) -> Self {
         Self {
             req_type: DiscordClientRequestType::Game,
             stage: OptionalMeleeStage(stage),
             character: OptionalMeleeCharacter(character),
             mode: mode.to_string(),
             timestamp,
+            opp_name,
             ..Default::default()
         }
     }
@@ -88,7 +101,7 @@ impl DiscordClient {
         let mut large_text = "Searching".to_string();
         let mut buttons = Vec::with_capacity(1);
         let mut _i_unfortunately_have_to_use_this_variable_because_of_rust_but_im_thankful_for_it = "".to_string();
-        if scene.unwrap_or(SlippiMenuScene::Direct) == SlippiMenuScene::Ranked {
+        if CONFIG.with_ref(|c| c.slippi.ranked.show_rank) && scene.unwrap_or(SlippiMenuScene::Direct) == SlippiMenuScene::Ranked {
             let connect_code_opt = get_connect_code();
             if connect_code_opt.is_some() {
                 let connect_code = connect_code_opt.unwrap();
@@ -120,7 +133,7 @@ impl DiscordClient {
         ).unwrap()
         
     }
-    pub fn game(&mut self, stage: OptionalMeleeStage, character: OptionalMeleeCharacter, mode: String, timestamp: DiscordClientRequestTimestamp) {
+    pub fn game(&mut self, stage: OptionalMeleeStage, character: OptionalMeleeCharacter, mode: String, timestamp: DiscordClientRequestTimestamp, opp_name: Option<String>) {
         self.client.set_activity(
             activity::Activity::new()
                 .assets(
@@ -135,7 +148,7 @@ impl DiscordClient {
                     else if (timestamp.mode as u8) < (DiscordClientRequestTimestampMode::End as u8) { Timestamps::new().start(timestamp.timestamp) }
                     else { Timestamps::new().end(timestamp.timestamp) })
                 .details(mode.as_str())
-                .state("In Game")
+                .state(format!("In Game{}", opp_name.and_then(|n| Some(format!(" | Playing against {}", n))).unwrap_or("".to_string())).as_str())
         ).unwrap()
     }
     pub fn close(&mut self) {

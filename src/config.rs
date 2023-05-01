@@ -26,6 +26,7 @@ structstruck::strike! {
         pub slippi: struct {
             pub enabled: bool,
             pub show_queueing: bool,
+            pub show_opponent_name: bool,
             pub ranked: struct {
                 pub enabled: bool,
                 pub show_rank: bool,
@@ -64,6 +65,7 @@ impl Default for AppConfig {
             slippi: Slippi {
                 enabled: true,
                 show_queueing: true,
+                show_opponent_name: true,
                 ranked: Ranked {
                     enabled: true,
                     show_rank: true,

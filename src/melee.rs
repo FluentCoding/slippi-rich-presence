@@ -84,6 +84,7 @@ impl MeleeClient {
 
     fn get_player_port(&mut self) -> Option<u8> { self.mem.read::<u8>(R13!(0x5108)) }
     fn get_slippi_player_port(&mut self) -> Option<u8> { self.mem.read_msrb(MSRBOffset::MsrbLocalPlayerIndex) }
+    fn get_opp_name(&mut self) -> Option<String> { self.mem.read_msrb_string::<31>(MSRBOffset::MsrbOppName) }
     fn get_player_connect_code(&mut self, port: u8) -> Option<String> {
         const PLAYER_CONNECTCODE_OFFSETS: [MSRBOffset; 4] = [MSRBOffset::MsrbP1ConnectCode, MSRBOffset::MsrbP2ConnectCode, MSRBOffset::MsrbP3ConnectCode, MSRBOffset::MsrbP4ConnectCode];
         self.mem.read_msrb_string_shift_jis::<10>(PLAYER_CONNECTCODE_OFFSETS[port as usize])
@@ -140,7 +141,6 @@ impl MeleeClient {
         }
     }
     fn get_stage(&mut self) -> Option<MeleeStage> {
-        println!("{:?}", self.mem.read::<u8>( 0x8049E6C8 + 0x88 + 0x03));
         self.mem.read::<u8>( 0x8049E6C8 + 0x88 + 0x03).and_then(|v| MeleeStage::try_from(v).ok())
     }
     fn get_character(&mut self, player_id: u8) -> Option<MeleeCharacter> {
@@ -236,7 +236,8 @@ impl MeleeClient {
                             self.get_stage(),
                             if c.global.show_in_game_character { self.get_character(player_index) } else { Some(MeleeCharacter::Hidden) },
                             gamemode,
-                            timestamp
+                            timestamp,
+                            if c.slippi.show_opponent_name { self.get_opp_name() } else { None }
                         );
                         
                         send_discord_msg!(request.clone());

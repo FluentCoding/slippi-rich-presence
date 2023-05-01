@@ -140,8 +140,11 @@ impl DolphinMemory {
         raw.reverse(); // we apparently have to reverse it again due to how the string is gathered
 
         return match std::str::from_utf8(&raw) {
-            Ok(v) => Some(v.to_string()),
-            Err(e) => panic!("Invalid utf-8 string => {:?} | {}", res.unwrap(), e.to_string())
+            Ok(v) => Some(v.trim_end_matches(char::from(0)).to_string()),
+            Err(e) => {
+                println!("Invalid utf-8 string => {:?} | {}", res.unwrap(), e.to_string());
+                None
+            }
         };
     }
 
@@ -156,7 +159,7 @@ impl DolphinMemory {
 
         let (dec_res, _enc, errors) = SHIFT_JIS.decode(&raw);
         if errors {
-            panic!("Invalid shift-jis string => {:?}", res.unwrap())
+            println!("Invalid shift-jis string => {:?}", res.unwrap())
         }
         return Some(dec_res.as_ref().trim_end_matches(char::from(0)).to_string());
     }

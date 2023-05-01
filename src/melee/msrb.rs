@@ -48,7 +48,11 @@ impl DolphinMemory {
     pub fn read_msrb<T: Sized>(&mut self, offset: MSRBOffset) -> Option<T> where [u8; mem::size_of::<T>()]: {
         self.msrb_ptr().and_then(|ptr| self.read::<T>(ptr + offset as u32))
     }
-    // in shift-jis
+
+    pub fn read_msrb_string<const LEN: usize>(&mut self, offset: MSRBOffset) -> Option<String> where [u8; mem::size_of::<[u8; LEN]>()]: {
+        self.msrb_ptr().and_then(|ptr| self.read_string::<LEN>(ptr + offset as u32))
+    }
+
     pub fn read_msrb_string_shift_jis<const LEN: usize>(&mut self, offset: MSRBOffset) -> Option<String> where [u8; mem::size_of::<[u8; LEN]>()]: {
         self.msrb_ptr().and_then(|ptr| self.read_string_shift_jis::<LEN>(ptr + offset as u32))
     }

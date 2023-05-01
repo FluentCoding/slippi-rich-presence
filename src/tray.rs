@@ -46,6 +46,7 @@ enum TrayEvents {
     // Slippi
     EnableSlippi,
     SlippiShowQueueing,
+    SlippiShowOpponentName,
 
     SlippiEnableRanked,
     SlippiRankedShowRank,
@@ -103,6 +104,7 @@ fn build_menu() -> MenuBuilder<TrayEvents> {
             ExtendedMenuBuilder::new()
                     .checkable("Enabled", c.slippi.enabled, TrayEvents::EnableSlippi)
                     .cwec("Show activity when searching", c.slippi.show_queueing, TrayEvents::SlippiShowQueueing, &[c.slippi.enabled])
+                    .cwec("Show opponent name", c.slippi.show_opponent_name, TrayEvents::SlippiShowOpponentName, &[c.slippi.enabled])
                     .submenu(
                         "Ranked",
                     ExtendedMenuBuilder::new()
@@ -189,6 +191,7 @@ pub fn run_tray() {
 
             TrayEvents::EnableSlippi => toggle_handler(|f| f.slippi.enabled = !f.slippi.enabled),
             TrayEvents::SlippiShowQueueing => toggle_handler(|f| f.slippi.show_queueing = !f.slippi.show_queueing),
+            TrayEvents::SlippiShowOpponentName => toggle_handler(|f| f.slippi.show_opponent_name = !f.slippi.show_opponent_name),
 
             TrayEvents::SlippiEnableRanked => toggle_handler(|f| f.slippi.ranked.enabled = !f.slippi.ranked.enabled),
             TrayEvents::SlippiRankedShowRank => toggle_handler(|f| f.slippi.ranked.show_rank = !f.slippi.ranked.show_rank),
