@@ -1,3 +1,8 @@
+// TODO Sessions - each scene has a minor 0 which is the css. if you leave the major scene, the session ends, otherwise when not in-game we show when the session started
+// ^ option name "Show overall game session when not in-game" 
+// TODO HRC & BTT Records in discord
+// TODO Ranked match score, button "View opponent ranked profile", show details in stage striking already (in discord rich presence, signalize that you are in stage striking as well)
+
 // #![windows_subsystem = "windows"]
 #![feature(generic_const_exprs)]
 
@@ -9,6 +14,8 @@ use single_instance::SingleInstance;
 use tokio_util::sync::CancellationToken;
 use tokio::sync::mpsc;
 use util::sleep;
+
+use crate::tray::MeleeTrayEvent;
 
 mod config;
 mod discord;
@@ -22,16 +29,18 @@ async fn main() {
     let instance = SingleInstance::new("SLIPPI_DISCORD_RICH_PRESENCE_MTX").unwrap();
     assert!(instance.is_single());
     let (tx, mut rx) = mpsc::channel::<DiscordClientRequest>(32);
+    let (mtx, mrx) = std::sync::mpsc::channel::<MeleeTrayEvent>();
 
     let cancel_token = CancellationToken::new();
     let melee_cancel_token = cancel_token.child_token();
     tokio::spawn(async move {
         loop {
-            let melee_tx = tx.clone();
+            let discord_tx = tx.clone();
+            let tray_tx = mtx.clone();
             let c_token = melee_cancel_token.clone();
             let res = tokio::task::spawn_blocking(move || {
                 let mut client = melee::MeleeClient::new();
-                client.run(c_token, melee_tx);
+                client.run(c_token, discord_tx, tray_tx);
             }).await;
             match res {
                 Ok(_) => { /* handle successfull exit */ },
@@ -69,7 +78,7 @@ async fn main() {
         discord_client.close();
     });
 
-    tray::run_tray(); // synchronous
+    tray::run_tray(mrx); // synchronous
 
     // cleanup
     cancel_token.cancel();

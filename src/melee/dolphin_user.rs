@@ -22,16 +22,12 @@ impl ConnectCode {
 pub fn get_connect_code() -> Option<ConnectCode> {
     if let Some(user_json_path) = get_appdata_file("Slippi Launcher/netplay/User/Slippi/user.json") {
         if user_json_path.is_file() && user_json_path.exists() {
-            return match fs::read_to_string(user_json_path) {
-                Ok(data) => {
-                    let v = serde_json::from_str::<Value>(data.as_str());
-                    match v {
-                        Ok(data) => data["connectCode"].as_str().and_then(|v| Some(ConnectCode(v.to_string()))),
-                        _ => None
-                    }
-                },
-                _ => None
-            }
+            return fs::read_to_string(user_json_path).ok().and_then(|data| {
+                match serde_json::from_str::<Value>(data.as_str()) {
+                    Ok(data) => data["connectCode"].as_str().and_then(|v| Some(ConnectCode(v.into()))),
+                    _ => None
+                }
+            });
         }
     }
     None

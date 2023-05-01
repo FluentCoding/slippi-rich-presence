@@ -107,9 +107,9 @@ pub struct OptionalMeleeCharacter(pub Option<MeleeCharacter>);
 impl OptionalMeleeCharacter {
 	pub fn as_discord_resource(&self) -> String {
 		self.0.as_ref().and_then(|c|
-			if *c == MeleeCharacter::Hidden { Some("transparent".to_string()) }
+			if *c == MeleeCharacter::Hidden { Some("transparent".into()) }
 			else { Some(format!("char{}", (*c) as u8) ) }
-		).unwrap_or("questionmark".to_string())
+		).unwrap_or("questionmark".into())
 	}
 }
 impl Display for OptionalMeleeCharacter {

@@ -2,6 +2,8 @@ use std::fmt::Display;
 
 use num_enum::TryFromPrimitive;
 
+use super::character::MeleeCharacter;
+
 #[derive(Debug, PartialEq, Copy, Clone, TryFromPrimitive)]
 #[repr(u8)]
 pub enum MeleeStage {
@@ -43,7 +45,41 @@ pub enum MeleeStage {
     // AdvTe, (unused)
     Battle = 36,
     FD,
-    HomeRunStadium = 67
+
+    HomeRunStadium = 67,
+
+    MarioTargetTest = 40,
+    CaptainFalconTargetTest,
+    YoungLinkTargetTest,
+    DonkeyKongTargetTest,
+    DrMarioTargetTest,
+    FalcoTargetTest,
+    FoxTargetTest,
+    IceClimbersTargetTest,
+    KirbyTargetTest,
+    BowserTargetTest,
+    LinkTargetTest,
+    LuigiTargetTest,
+    MarthTargetTest,
+    MewtwoTargetTest,
+    NessTargetTest,
+    PeachTargetTest,
+    PichuTargetTest,
+    PikachuTargetTest,
+    JigglypuffTargetTest,
+    SamusTargetTest,
+    SheikTargetTest,
+    YoshiTargetTest,
+    ZeldaTargetTest,
+    MrGameAndWatchTargetTest,
+    RoyTargetTest,
+    GanondorfTargetTest,
+}
+
+impl MeleeStage {
+    fn is_target_test(&self) -> bool {
+        *self as u8 >= MeleeStage::MarioTargetTest as u8 && *self as u8 <= MeleeStage::GanondorfTargetTest as u8
+    }
 }
 
 impl Display for MeleeStage {
@@ -82,7 +118,34 @@ impl Display for MeleeStage {
             Self::OldKongo => write!(f, "Kongo Jungle (N64)"),
             Self::Battle => write!(f, "Battlefield"),
             Self::FD => write!(f, "Final Destination"),
-            Self::HomeRunStadium => write!(f, "Home-Run Stadium")
+            Self::HomeRunStadium => write!(f, "Home-Run Stadium"),
+
+            Self::DrMarioTargetTest => write!(f, "Target Test ({})", MeleeCharacter::DrMario),
+            Self::MarioTargetTest => write!(f, "Target Test ({})", MeleeCharacter::Mario),
+            Self::LuigiTargetTest => write!(f, "Target Test ({})", MeleeCharacter::Luigi),
+            Self::BowserTargetTest => write!(f, "Target Test ({})", MeleeCharacter::Bowser),
+            Self::PeachTargetTest => write!(f, "Target Test ({})", MeleeCharacter::Peach),
+            Self::YoshiTargetTest => write!(f, "Target Test ({})", MeleeCharacter::Yoshi),
+            Self::DonkeyKongTargetTest => write!(f, "Target Test ({})", MeleeCharacter::DonkeyKong),
+            Self::CaptainFalconTargetTest => write!(f, "Target Test ({})", MeleeCharacter::CaptainFalcon),
+            Self::GanondorfTargetTest => write!(f, "Target Test ({})", MeleeCharacter::Ganondorf),
+            Self::FalcoTargetTest => write!(f, "Target Test ({})", MeleeCharacter::Falco),
+            Self::FoxTargetTest => write!(f, "Target Test ({})", MeleeCharacter::Fox),
+            Self::NessTargetTest => write!(f, "Target Test ({})", MeleeCharacter::Ness),
+            Self::IceClimbersTargetTest => write!(f, "Target Test ({})", MeleeCharacter::IceClimbers),
+            Self::KirbyTargetTest => write!(f, "Target Test ({})", MeleeCharacter::Kirby),
+            Self::SamusTargetTest => write!(f, "Target Test ({})", MeleeCharacter::Samus),
+            Self::SheikTargetTest => write!(f, "Target Test ({})", MeleeCharacter::Sheik),
+            Self::ZeldaTargetTest => write!(f, "Target Test ({})", MeleeCharacter::Zelda),
+            Self::LinkTargetTest => write!(f, "Target Test ({})", MeleeCharacter::Link),
+            Self::YoungLinkTargetTest => write!(f, "Target Test ({})", MeleeCharacter::YoungLink),
+            Self::PichuTargetTest => write!(f, "Target Test ({})", MeleeCharacter::Pichu),
+            Self::PikachuTargetTest => write!(f, "Target Test ({})", MeleeCharacter::Pikachu),
+            Self::JigglypuffTargetTest => write!(f, "Target Test ({})", MeleeCharacter::Jigglypuff),
+            Self::MewtwoTargetTest => write!(f, "Target Test ({})", MeleeCharacter::Mewtwo),
+            Self::MrGameAndWatchTargetTest => write!(f, "Target Test ({})", MeleeCharacter::MrGameAndWatch),
+            Self::MarthTargetTest => write!(f, "Target Test ({})", MeleeCharacter::Marth),
+            Self::RoyTargetTest => write!(f, "Target Test ({})", MeleeCharacter::Roy),
         }
     }
 }
@@ -91,7 +154,13 @@ impl Display for MeleeStage {
 pub struct OptionalMeleeStage(pub Option<MeleeStage>);
 impl OptionalMeleeStage {
 	pub fn as_discord_resource(&self) -> String {
-		self.0.as_ref().and_then(|c| Some(format!("stage{}", (*c) as u8))).unwrap_or("questionmark".to_string())
+		self.0.as_ref().and_then(|c| {
+            if c.is_target_test() {
+                Some("stagebtt".into())
+            } else {
+                Some(format!("stage{}", (*c) as u8))
+            }
+        }).unwrap_or("questionmark".into())
 	}
 }
 impl Display for OptionalMeleeStage {

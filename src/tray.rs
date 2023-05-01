@@ -1,4 +1,4 @@
-use std::{mem::MaybeUninit, sync::{atomic::{AtomicBool, self}, Arc}};
+use std::{mem::MaybeUninit, sync::{atomic::{AtomicBool, self}, Arc, mpsc::Receiver}};
 
 use trayicon::{TrayIconBuilder, MenuBuilder};
 use windows::Win32::UI::WindowsAndMessaging::{TranslateMessage, DispatchMessageA, PeekMessageA, PM_REMOVE};
@@ -35,6 +35,12 @@ impl From<ExtendedMenuBuilder> for MenuBuilder<TrayEvents> {
     }
 }
 
+#[derive(PartialEq, Clone, Copy)]
+pub enum MeleeTrayEvent {
+    Connected,
+    Disconnected
+}
+
 #[derive(Clone, Eq, PartialEq, Debug)]
 enum TrayEvents {
     _Unused,
@@ -68,29 +74,27 @@ enum TrayEvents {
     // Vs. Mode
     EnableVsMode,
 
+    // Stadium
+    EnableStadium,
+
+    StadiumEnableHRC,
+    
+    StadiumEnableBTT,
+    StadiumBTTShowStageName,
+
+    StadiumEnableMMM,
+
     // Miscallaneous
     OpenConfig,
     Quit,
 }
 
-fn build_menu() -> MenuBuilder<TrayEvents> {
+fn build_menu(melee_connected: &Arc<AtomicBool>) -> MenuBuilder<TrayEvents> {
     CONFIG.with_ref(|c| {
         MenuBuilder::new()
         .with(trayicon::MenuItem::Item {
             id: TrayEvents::_Unused,
-            name: "Health:".into(),
-            disabled: true,
-            icon: None
-        })
-        .with(trayicon::MenuItem::Item {
-            id: TrayEvents::_Unused,
-            name: "✔️ Connected to Discord".into(),
-            disabled: true,
-            icon: None
-        })
-        .with(trayicon::MenuItem::Item {
-            id: TrayEvents::_Unused,
-            name: "❌ Searching for dolphin process...".into(),
+            name: if melee_connected.load(atomic::Ordering::Relaxed) { "✔️ Connected to dolphin process" } else { "❌ Searching for dolphin process..." }.into(),
             disabled: true,
             icon: None
         })
@@ -151,6 +155,31 @@ fn build_menu() -> MenuBuilder<TrayEvents> {
             MenuBuilder::new()
                     .checkable("Enabled", c.vs_mode.enabled, TrayEvents::EnableVsMode)
         )
+        .submenu(
+            "Stadium",
+            ExtendedMenuBuilder::new()
+                    .checkable("Enabled", c.stadium.enabled, TrayEvents::EnableStadium)
+                    .submenu(
+                        "Home-Run Contest",
+                    ExtendedMenuBuilder::new()
+                            .cwec("Enabled", c.stadium.hrc.enabled, TrayEvents::StadiumEnableHRC, &[c.stadium.enabled])
+                            .into()
+                    )
+                    .submenu(
+                        "Target Test",
+                        ExtendedMenuBuilder::new()
+                            .cwec("Enabled", c.stadium.btt.enabled, TrayEvents::StadiumEnableBTT, &[c.stadium.enabled])
+                            .cwec("Show stage name", c.stadium.btt.show_stage_name, TrayEvents::StadiumBTTShowStageName, &[c.stadium.enabled])
+                            .into()
+                    )
+                    .submenu(
+                        "Multi-Man Melee",
+                        ExtendedMenuBuilder::new()
+                            .cwec("Enabled", c.stadium.mmm.enabled, TrayEvents::StadiumEnableMMM, &[c.stadium.enabled])
+                            .into()
+                    )
+                    .into()
+        )
         .separator()
         .item("Open Configuration File", TrayEvents::OpenConfig)
         .item("Quit", TrayEvents::Quit)
@@ -163,9 +192,8 @@ fn build_menu() -> MenuBuilder<TrayEvents> {
     })
 }
 
-pub fn run_tray() {
-    let should_end = Arc::new(AtomicBool::new(false));
-    let shared_should_end = should_end.clone();
+pub fn run_tray(mrx: Receiver<MeleeTrayEvent>) {
+    let melee_connected = Arc::new(AtomicBool::new(false));
 
     let (s, r) = mpsc::channel::<TrayEvents>();
     let icon_raw = include_bytes!("../assets/icon.ico");
@@ -175,53 +203,81 @@ pub fn run_tray() {
         .icon_from_buffer(icon_raw)
         .tooltip("Slippi Discord Integration")
         .menu(
-            build_menu()
+            build_menu(&melee_connected)
         )
         .build()
         .unwrap();
 
+    let should_end = Arc::new(AtomicBool::new(false));
+    let shared_should_end = should_end.clone();
     std::thread::spawn(move || {
+        let mut update_menu = || {
+            tray_icon.set_menu(&build_menu(&melee_connected)).unwrap();
+        };
         let mut toggle_handler = |modifier: fn(&mut AppConfig)| {
             CONFIG.with_mut(|c| { modifier(c); write_config(c); });
-            tray_icon.set_menu(&build_menu()).unwrap();
+            update_menu();
         };
-        r.iter().for_each(|m| match m {
-            TrayEvents::ShowInGameCharacter => toggle_handler(|f| f.global.show_in_game_character = !f.global.show_in_game_character),
-            TrayEvents::ShowInGameTime => toggle_handler(|f| f.global.show_in_game_time = !f.global.show_in_game_time),
 
-            TrayEvents::EnableSlippi => toggle_handler(|f| f.slippi.enabled = !f.slippi.enabled),
-            TrayEvents::SlippiShowQueueing => toggle_handler(|f| f.slippi.show_queueing = !f.slippi.show_queueing),
-            TrayEvents::SlippiShowOpponentName => toggle_handler(|f| f.slippi.show_opponent_name = !f.slippi.show_opponent_name),
+        loop {
+            if let Ok(melee_ev) = mrx.try_recv() {
+                match melee_ev {
+                    MeleeTrayEvent::Connected => melee_connected.store(true, atomic::Ordering::Relaxed),
+                    MeleeTrayEvent::Disconnected => melee_connected.store(false, atomic::Ordering::Relaxed)
+                }
+                toggle_handler(|_|{});
+            }
+            if let Ok(tray_ev) = r.try_recv() {
+                match tray_ev {
+                    TrayEvents::ShowInGameCharacter => toggle_handler(|f| f.global.show_in_game_character = !f.global.show_in_game_character),
+                    TrayEvents::ShowInGameTime => toggle_handler(|f| f.global.show_in_game_time = !f.global.show_in_game_time),
+        
+                    TrayEvents::EnableSlippi => toggle_handler(|f| f.slippi.enabled = !f.slippi.enabled),
+                    TrayEvents::SlippiShowQueueing => toggle_handler(|f| f.slippi.show_queueing = !f.slippi.show_queueing),
+                    TrayEvents::SlippiShowOpponentName => toggle_handler(|f| f.slippi.show_opponent_name = !f.slippi.show_opponent_name),
+        
+                    TrayEvents::SlippiEnableRanked => toggle_handler(|f| f.slippi.ranked.enabled = !f.slippi.ranked.enabled),
+                    TrayEvents::SlippiRankedShowRank => toggle_handler(|f| f.slippi.ranked.show_rank = !f.slippi.ranked.show_rank),
+                    TrayEvents::SlippiRankedShowViewRankedProfileButton => toggle_handler(|f| f.slippi.ranked.show_view_ranked_profile_button = !f.slippi.ranked.show_view_ranked_profile_button),
+                    TrayEvents::SlippiRankedShowScore => toggle_handler(|f| f.slippi.ranked.show_score = !f.slippi.ranked.show_score),
+        
+                    TrayEvents::SlippiEnableUnranked => toggle_handler(|f| f.slippi.unranked.enabled = !f.slippi.unranked.enabled),
+        
+                    TrayEvents::SlippiEnableDirect => toggle_handler(|f| f.slippi.direct.enabled = !f.slippi.direct.enabled),
+        
+                    TrayEvents::SlippiEnableTeams => toggle_handler(|f| f.slippi.teams.enabled = !f.slippi.teams.enabled),
+        
+                    TrayEvents::EnableUnclePunch => toggle_handler(|f| f.uncle_punch.enabled = !f.uncle_punch.enabled),
+        
+                    TrayEvents::EnableVsMode => toggle_handler(|f| f.vs_mode.enabled = !f.vs_mode.enabled),
+        
+                    TrayEvents::EnableTrainingMode => toggle_handler(|f| f.training_mode.enabled = !f.training_mode.enabled),
 
-            TrayEvents::SlippiEnableRanked => toggle_handler(|f| f.slippi.ranked.enabled = !f.slippi.ranked.enabled),
-            TrayEvents::SlippiRankedShowRank => toggle_handler(|f| f.slippi.ranked.show_rank = !f.slippi.ranked.show_rank),
-            TrayEvents::SlippiRankedShowViewRankedProfileButton => toggle_handler(|f| f.slippi.ranked.show_view_ranked_profile_button = !f.slippi.ranked.show_view_ranked_profile_button),
-            TrayEvents::SlippiRankedShowScore => toggle_handler(|f| f.slippi.ranked.show_score = !f.slippi.ranked.show_score),
+                    TrayEvents::EnableStadium => toggle_handler(|f| f.stadium.enabled = !f.stadium.enabled),
 
-            TrayEvents::SlippiEnableUnranked => toggle_handler(|f| f.slippi.unranked.enabled = !f.slippi.unranked.enabled),
+                    TrayEvents::StadiumEnableHRC => toggle_handler(|f| f.stadium.hrc.enabled = !f.stadium.hrc.enabled),
 
-            TrayEvents::SlippiEnableDirect => toggle_handler(|f| f.slippi.direct.enabled = !f.slippi.direct.enabled),
+                    TrayEvents::StadiumEnableBTT => toggle_handler(|f| f.stadium.btt.enabled = !f.stadium.btt.enabled),
+                    TrayEvents::StadiumBTTShowStageName => toggle_handler(|f| f.stadium.btt.show_stage_name = !f.stadium.btt.show_stage_name),
 
-            TrayEvents::SlippiEnableTeams => toggle_handler(|f| f.slippi.teams.enabled = !f.slippi.teams.enabled),
-
-            TrayEvents::EnableUnclePunch => toggle_handler(|f| f.uncle_punch.enabled = !f.uncle_punch.enabled),
-
-            TrayEvents::EnableVsMode => toggle_handler(|f| f.vs_mode.enabled = !f.vs_mode.enabled),
-
-            TrayEvents::EnableTrainingMode => toggle_handler(|f| f.training_mode.enabled = !f.training_mode.enabled),
-
-            TrayEvents::OpenConfig => {
-                if let Some(conf_file) = get_appdata_file(format!("{}/{}/app_config.prefs.json", APP_INFO.author, APP_INFO.name).as_str()) {
-                    if conf_file.is_file() && conf_file.exists() {
-                        let _ = open::that(conf_file);
+                    TrayEvents::StadiumEnableMMM => toggle_handler(|f| f.stadium.mmm.enabled = !f.stadium.mmm.enabled),
+        
+                    TrayEvents::OpenConfig => {
+                        if let Some(conf_file) = get_appdata_file(format!("{}/{}/app_config.prefs.json", APP_INFO.author, APP_INFO.name).as_str()) {
+                            if conf_file.is_file() && conf_file.exists() {
+                                let _ = open::that(conf_file);
+                            }
+                        }
                     }
+                    TrayEvents::Quit => {
+                        should_end.store(true, atomic::Ordering::Relaxed);
+                        break;
+                    },
+                    TrayEvents::_Unused => {}
                 }
             }
-            TrayEvents::Quit => should_end.store(true, atomic::Ordering::Relaxed),
-            _ => {}
-        })
+        }
     });
-    
     // Application message loop
     loop {
         if shared_should_end.load(atomic::Ordering::Relaxed) {

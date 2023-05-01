@@ -3,15 +3,15 @@ use std::{fmt::Display};
 use num_enum::TryFromPrimitive;
 use strum::{IntoEnumIterator};
 use strum_macros::{Display, EnumIter};
-use tokio::sync::mpsc::Sender;
 use tokio_util::sync::CancellationToken;
 
-use crate::{discord::{DiscordClientRequest, DiscordClientRequestType, DiscordClientRequestTimestamp, DiscordClientRequestTimestampMode}, util::{current_unix_time, sleep}, melee::{stage::MeleeStage, character::MeleeCharacter}, config::{CONFIG, AppConfig}};
+use crate::{discord::{DiscordClientRequest, DiscordClientRequestType, DiscordClientRequestTimestamp, DiscordClientRequestTimestampMode}, util::{current_unix_time, sleep}, melee::{stage::MeleeStage, character::MeleeCharacter}, config::{CONFIG}, tray::MeleeTrayEvent};
 
-use self::{dolphin_mem::{DolphinMemory, util::R13}, msrb::MSRBOffset};
+use self::{dolphin_mem::{DolphinMemory, util::R13}, msrb::MSRBOffset, multiman::MultiManVariant};
 
 mod dolphin_mem;
 mod msrb;
+mod multiman;
 pub mod stage;
 pub mod character;
 pub mod dolphin_user;
@@ -47,17 +47,20 @@ pub enum SlippiMenuScene {
 
 pub struct MeleeClient {
     mem: DolphinMemory,
-    last_payload: DiscordClientRequest
+    last_payload: DiscordClientRequest,
+    last_tray_event: MeleeTrayEvent
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone, Copy)]
 pub enum MeleeScene {
     VsMode,
     UnclePunch,
     TrainingMode,
     SlippiOnline(Option<SlippiMenuScene>),
     SlippiCss(Option<SlippiMenuScene>),
-    HomeRunContest
+    HomeRunContest,
+    TargetTest(Option<MeleeStage>),
+    MultiManMelee(MultiManVariant)
 }
 
 impl Display for MeleeScene {
@@ -66,12 +69,24 @@ impl Display for MeleeScene {
             Self::VsMode => write!(f, "Vs. Mode"),
             Self::UnclePunch => write!(f, "UnclePunch Training Mode"),
             Self::TrainingMode => write!(f, "Training Mode"),
-            Self::SlippiOnline(Some(SlippiMenuScene::Ranked)) => write!(f, "Ranked"),
-            Self::SlippiOnline(Some(SlippiMenuScene::Unranked)) => write!(f, "Unranked"),
-            Self::SlippiOnline(Some(SlippiMenuScene::Direct)) => write!(f, "Direct"),
-            Self::SlippiOnline(Some(SlippiMenuScene::Teams)) => write!(f, "Teams"),
+            Self::SlippiOnline(Some(scene)) => write!(f, "{}", scene),
             Self::SlippiOnline(None) => write!(f, "Slippi Online"),
             Self::HomeRunContest => write!(f, "Home-Run Contest"),
+            Self::TargetTest(stage_opt) => {
+                if stage_opt.is_some() && CONFIG.with_ref(|c| c.stadium.btt.show_stage_name) {
+                    write!(f, "{}", stage_opt.unwrap())
+                } else {
+                    write!(f, "Target Test")
+                }
+            },
+            Self::MultiManMelee(variant) => write!(f, "Multi-Man Melee ({})", match variant {
+                MultiManVariant::TenMan => "10 man",
+                MultiManVariant::HundredMan => "100 man",
+                MultiManVariant::ThreeMinute => "3 min",
+                MultiManVariant::FifteenMinute => "15 min",
+                MultiManVariant::Endless => "Endless",
+                MultiManVariant::Cruel => "Cruel",
+            }),
             Self::SlippiCss(_) => unimplemented!(),
         }
     }
@@ -79,7 +94,7 @@ impl Display for MeleeScene {
 
 impl MeleeClient {
     pub fn new() -> Self {
-        MeleeClient { mem: DolphinMemory::new(), last_payload: DiscordClientRequest::clear() }
+        MeleeClient { mem: DolphinMemory::new(), last_payload: DiscordClientRequest::clear(), last_tray_event: MeleeTrayEvent::Disconnected }
     }
 
     fn get_player_port(&mut self) -> Option<u8> { self.mem.read::<u8>(R13!(0x5108)) }
@@ -137,18 +152,25 @@ impl MeleeClient {
             (8, 2) => Some(MeleeScene::SlippiOnline(self.slippi_online_scene())),
             (8, 0) => Some(MeleeScene::SlippiCss(self.slippi_online_scene())),
             (32, 1) => Some(MeleeScene::HomeRunContest),
+            (15, 1) => Some(MeleeScene::TargetTest(self.get_stage())),
+            (33, 1) => Some(MeleeScene::MultiManMelee(MultiManVariant::TenMan)),
+            (34, 1) => Some(MeleeScene::MultiManMelee(MultiManVariant::HundredMan)),
+            (35, 1) => Some(MeleeScene::MultiManMelee(MultiManVariant::ThreeMinute)),
+            (36, 1) => Some(MeleeScene::MultiManMelee(MultiManVariant::FifteenMinute)),
+            (37, 1) => Some(MeleeScene::MultiManMelee(MultiManVariant::Endless)),
+            (38, 1) => Some(MeleeScene::MultiManMelee(MultiManVariant::Cruel)),
             _ => None
         }
     }
     fn get_stage(&mut self) -> Option<MeleeStage> {
-        self.mem.read::<u8>( 0x8049E6C8 + 0x88 + 0x03).and_then(|v| MeleeStage::try_from(v).ok())
+        self.mem.read::<u8>(0x8049E6C8 + 0x88 + 0x03).and_then(|v| MeleeStage::try_from(v).ok())
     }
     fn get_character(&mut self, player_id: u8) -> Option<MeleeCharacter> {
         const PLAYER_BLOCKS: [u32; 4] = [0x80453080, 0x80453F10, 0x80454DA0, 0x80455C30];
         self.mem.read::<u8>(PLAYER_BLOCKS[player_id as usize] + 0x07).and_then(|v| MeleeCharacter::try_from(v).ok())
     }
 
-    pub fn run(&mut self, stop_signal: CancellationToken, discord_send: Sender<DiscordClientRequest>) {
+    pub fn run(&mut self, stop_signal: CancellationToken, discord_send: tokio::sync::mpsc::Sender<DiscordClientRequest>, tray_send: std::sync::mpsc::Sender<MeleeTrayEvent>) {
         const RUN_INTERVAL: u64 = 1000;
         macro_rules! send_discord_msg {
             ($req:expr) => {
@@ -167,6 +189,15 @@ impl MeleeClient {
                 println!("{}", if self.mem.find_process() { "Found" } else { "Searching process..." });
             } else {
                 self.mem.check_process_running();
+            }
+
+            {
+                let has_process = self.mem.has_process();
+                if has_process == (self.last_tray_event == MeleeTrayEvent::Disconnected) {
+                    let tray_ev = if has_process { MeleeTrayEvent::Connected } else { MeleeTrayEvent::Disconnected };
+                    self.last_tray_event = tray_ev;
+                    let _ = tray_send.send(tray_ev);
+                }
             }
 
             CONFIG.with_ref(|c| {
@@ -212,7 +243,9 @@ impl MeleeClient {
                         MeleeScene::UnclePunch => c.uncle_punch.enabled,
                         MeleeScene::TrainingMode => c.training_mode.enabled,
                         MeleeScene::VsMode => c.vs_mode.enabled,
-                        _ => true
+                        MeleeScene::HomeRunContest => c.stadium.enabled && c.stadium.hrc.enabled,
+                        MeleeScene::TargetTest(_) => c.stadium.enabled && c.stadium.btt.enabled,
+                        MeleeScene::MultiManMelee(_) => c.stadium.enabled && c.stadium.mmm.enabled
                     } {
                         let game_time = self.game_time();
                         let timestamp = if c.global.show_in_game_time {
@@ -233,11 +266,11 @@ impl MeleeClient {
                             _ => Some(0u8) // default to port 1, mostly the case in single player modes like training mode/unclepunch
                         }.unwrap_or(0u8);
                         let request = DiscordClientRequest::game(
-                            self.get_stage(),
+                            match gamemode { MeleeScene::TargetTest(scene) => scene, _ => self.get_stage() },
                             if c.global.show_in_game_character { self.get_character(player_index) } else { Some(MeleeCharacter::Hidden) },
                             gamemode,
                             timestamp,
-                            if c.slippi.show_opponent_name { self.get_opp_name() } else { None }
+                            if match gamemode { MeleeScene::SlippiOnline(_) => true, _ => false } && c.slippi.show_opponent_name { self.get_opp_name() } else { None }
                         );
                         
                         send_discord_msg!(request.clone());

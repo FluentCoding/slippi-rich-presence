@@ -55,7 +55,7 @@ impl Default for DiscordClientRequest {
             scene: None,
             stage: OptionalMeleeStage(None),
             character: OptionalMeleeCharacter(None),
-            mode: "".to_string(),
+            mode: "".into(),
             timestamp: DiscordClientRequestTimestamp {
                 mode: DiscordClientRequestTimestampMode::Static,
                 timestamp: current_unix_time(),
@@ -97,10 +97,10 @@ impl DiscordClient {
         self.client.clear_activity().unwrap();
     }
     pub async fn queue(&mut self, scene: Option<SlippiMenuScene>, character: OptionalMeleeCharacter) {
-        let mut large_image = "slippi".to_string();
-        let mut large_text = "Searching".to_string();
+        let mut large_image = "slippi".into();
+        let mut large_text = "Searching".into();
         let mut buttons = Vec::with_capacity(1);
-        let mut _i_unfortunately_have_to_use_this_variable_because_of_rust_but_im_thankful_for_it = "".to_string();
+        let mut _i_unfortunately_have_to_use_this_variable_because_of_rust_but_im_thankful_for_it = "".into();
         if CONFIG.with_ref(|c| c.slippi.ranked.show_rank) && scene.unwrap_or(SlippiMenuScene::Direct) == SlippiMenuScene::Ranked {
             let connect_code_opt = get_connect_code();
             if connect_code_opt.is_some() {
@@ -130,7 +130,7 @@ impl DiscordClient {
                 })
                 .buttons(buttons)
                 .timestamps(self.current_timestamp())
-                .details(scene.and_then(|v| Some(v.to_string())).or(Some("".to_string())).unwrap().as_str())
+                .details(scene.and_then(|v| Some(v.to_string())).unwrap_or("".into()).as_str())
                 .state("In Queue")
         ).unwrap()
         
@@ -150,7 +150,7 @@ impl DiscordClient {
                     else if (timestamp.mode as u8) < (DiscordClientRequestTimestampMode::End as u8) { Timestamps::new().start(timestamp.timestamp) }
                     else { Timestamps::new().end(timestamp.timestamp) })
                 .details(mode.as_str())
-                .state(format!("In Game{}", opp_name.and_then(|n| Some(format!(" | Playing against {}", n))).unwrap_or("".to_string())).as_str())
+                .state(opp_name.and_then(|n| Some(format!("Playing against {}", n))).unwrap_or("In Game".into()).as_str())
         ).unwrap()
     }
     pub fn close(&mut self) {

@@ -52,6 +52,19 @@ structstruck::strike! {
         pub training_mode: struct {
             pub enabled: bool
         },
+        pub stadium: struct {
+            pub enabled: bool,
+            pub hrc: struct {
+                pub enabled: bool
+            },
+            pub btt: struct {
+                pub enabled: bool,
+                pub show_stage_name: bool
+            },
+            pub mmm: struct {
+                pub enabled: bool
+            }
+        }
     }
 }
 
@@ -78,7 +91,20 @@ impl Default for AppConfig {
             },
             uncle_punch: UnclePunch { enabled: true },
             vs_mode: VsMode { enabled: true },
-            training_mode: TrainingMode { enabled: true }
+            training_mode: TrainingMode { enabled: true },
+            stadium: Stadium {
+                enabled: true,
+                hrc: Hrc {
+                    enabled: true
+                },
+                btt: Btt {
+                    enabled: true,
+                    show_stage_name: true
+                },
+                mmm: Mmm {
+                    enabled: true
+                }
+            }
         }
     }
 }
