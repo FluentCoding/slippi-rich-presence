@@ -111,8 +111,10 @@ impl DiscordClient {
                     let rank_info = rank::get_rank_info(fmt_code.as_str()).await.unwrap();
                     large_image = rank_info.name.to_lowercase().replace(" ", "_");
                     large_text = format!("{} | {} ELO", rank_info.name, util::round(rank_info.elo, 2));
-                    _i_unfortunately_have_to_use_this_variable_because_of_rust_but_im_thankful_for_it = format!("https://slippi.gg/user/{}", fmt_code.as_str());
-                    buttons.push(Button::new("View Ranked Profile", _i_unfortunately_have_to_use_this_variable_because_of_rust_but_im_thankful_for_it.as_str()));
+                    if CONFIG.with_ref(|c| c.slippi.ranked.show_view_ranked_profile_button) {
+                        _i_unfortunately_have_to_use_this_variable_because_of_rust_but_im_thankful_for_it = format!("https://slippi.gg/user/{}", fmt_code.as_str());
+                        buttons.push(Button::new("View Ranked Profile", _i_unfortunately_have_to_use_this_variable_because_of_rust_but_im_thankful_for_it.as_str()));
+                    }
                 }
             }
         }

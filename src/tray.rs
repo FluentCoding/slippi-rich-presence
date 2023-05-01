@@ -3,7 +3,7 @@ use std::{mem::MaybeUninit, sync::{atomic::{AtomicBool, self}, Arc}};
 use trayicon::{TrayIconBuilder, MenuBuilder};
 use windows::Win32::UI::WindowsAndMessaging::{TranslateMessage, DispatchMessageA, PeekMessageA, PM_REMOVE};
 
-use crate::config::{CONFIG, AppConfig, write_config};
+use crate::{config::{CONFIG, AppConfig, write_config, APP_INFO}, util::get_appdata_file};
 
 use {std::sync::mpsc};
 
@@ -68,6 +68,8 @@ enum TrayEvents {
     // Vs. Mode
     EnableVsMode,
 
+    // Miscallaneous
+    OpenConfig,
     Quit,
 }
 
@@ -150,6 +152,7 @@ fn build_menu() -> MenuBuilder<TrayEvents> {
                     .checkable("Enabled", c.vs_mode.enabled, TrayEvents::EnableVsMode)
         )
         .separator()
+        .item("Open Configuration File", TrayEvents::OpenConfig)
         .item("Quit", TrayEvents::Quit)
         .with(trayicon::MenuItem::Item {
             id: TrayEvents::_Unused,
@@ -183,9 +186,6 @@ pub fn run_tray() {
             tray_icon.set_menu(&build_menu()).unwrap();
         };
         r.iter().for_each(|m| match m {
-            TrayEvents::Quit => {
-                should_end.store(true, atomic::Ordering::Relaxed);
-            },
             TrayEvents::ShowInGameCharacter => toggle_handler(|f| f.global.show_in_game_character = !f.global.show_in_game_character),
             TrayEvents::ShowInGameTime => toggle_handler(|f| f.global.show_in_game_time = !f.global.show_in_game_time),
 
@@ -209,6 +209,15 @@ pub fn run_tray() {
             TrayEvents::EnableVsMode => toggle_handler(|f| f.vs_mode.enabled = !f.vs_mode.enabled),
 
             TrayEvents::EnableTrainingMode => toggle_handler(|f| f.training_mode.enabled = !f.training_mode.enabled),
+
+            TrayEvents::OpenConfig => {
+                if let Some(conf_file) = get_appdata_file(format!("{}/{}/app_config.prefs.json", APP_INFO.author, APP_INFO.name).as_str()) {
+                    if conf_file.is_file() && conf_file.exists() {
+                        let _ = open::that(conf_file);
+                    }
+                }
+            }
+            TrayEvents::Quit => should_end.store(true, atomic::Ordering::Relaxed),
             _ => {}
         })
     });

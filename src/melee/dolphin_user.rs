@@ -1,9 +1,9 @@
 use std::fs;
 
-use directories::BaseDirs;
 use lazy_static::lazy_static;
 use regex::Regex;
 use serde_json::Value;
+use crate::util::get_appdata_file;
 
 pub struct ConnectCode(String);
 impl ConnectCode {
@@ -20,8 +20,7 @@ impl ConnectCode {
 }
 
 pub fn get_connect_code() -> Option<ConnectCode> {
-    if let Some(base_dirs) = BaseDirs::new() {
-        let user_json_path = base_dirs.config_dir().join("Slippi Launcher/netplay/User/Slippi/user.json");
+    if let Some(user_json_path) = get_appdata_file("Slippi Launcher/netplay/User/Slippi/user.json") {
         if user_json_path.is_file() && user_json_path.exists() {
             return match fs::read_to_string(user_json_path) {
                 Ok(data) => {
@@ -35,6 +34,5 @@ pub fn get_connect_code() -> Option<ConnectCode> {
             }
         }
     }
-
     None
 }

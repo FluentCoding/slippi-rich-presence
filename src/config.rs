@@ -3,7 +3,7 @@ use ruspiro_singleton::Singleton;
 
 use crate::melee::SlippiMenuScene;
 
-const APP_INFO: AppInfo = AppInfo {
+pub const APP_INFO: AppInfo = AppInfo {
     name: "conf",
     author: "Slippi Discord Integration",
 };
