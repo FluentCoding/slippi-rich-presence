@@ -221,10 +221,7 @@ pub fn run_tray(mrx: Receiver<MeleeTrayEvent>) {
 
         loop {
             if let Ok(melee_ev) = mrx.try_recv() {
-                match melee_ev {
-                    MeleeTrayEvent::Connected => melee_connected.store(true, atomic::Ordering::Relaxed),
-                    MeleeTrayEvent::Disconnected => melee_connected.store(false, atomic::Ordering::Relaxed)
-                }
+                melee_connected.store(melee_ev == MeleeTrayEvent::Connected, atomic::Ordering::Relaxed);
                 toggle_handler(|_|{});
             }
             if let Ok(tray_ev) = r.try_recv() {

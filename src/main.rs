@@ -51,7 +51,7 @@ async fn main() {
                     println!("[ERROR] Melee Client crashed. Restarting...");
                     sleep(500);
                 },
-                Err(_) => { return; }
+                Err(_) => { }
             }
         }
     });
